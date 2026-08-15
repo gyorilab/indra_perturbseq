@@ -220,6 +220,9 @@ outputs/
 !data/inputs/*.csv
 !data/de_results_per_gene/
 !data/de_results_per_gene/*.csv
+# Hub gene DEG files — not tracked (generated locally)
+data/de_results_per_gene/TP53_vs_control.csv
+data/de_results_per_gene/CDKN1A_vs_control.csv
 
 # Archive directory is tracked but excluded from linting
 # archive/
