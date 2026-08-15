@@ -23,6 +23,7 @@ PALETTE = {
     "unexplained": "red",
 }
 DE_PVAL_CUTOFF = 0.05
+SHOW_OUTLIERS = True
 
 
 def _load_hop_csv(path: str, hop_label: str) -> pd.DataFrame:
@@ -213,8 +214,6 @@ def main(argv: list[str] | None = None) -> None:
                     help="Column in target-validation CSV used for filtering.")
     ap.add_argument("--filter-value", default="Use_for_analysis",
                     help="Required value in --filter-column.")
-    ap.add_argument("--no-outliers", action="store_true",
-                    help="Hide outlier points from boxplots.")
     ap.add_argument("--output-pval-plot", default="pvalue_distributions_boxplot.png")
     ap.add_argument("--output-lfc-plot", default="logfoldchange_distributions_boxplot.png")
     ap.add_argument("--output-csv", default="final_dataset_for_boxplots.csv")
@@ -236,9 +235,8 @@ def main(argv: list[str] | None = None) -> None:
     final_df.to_csv(args.output_csv, index=False)
     logger.info("Saved combined data -> %s", args.output_csv)
 
-    show = not args.no_outliers
-    _plot_pvalue(final_df, args.output_pval_plot, show_outliers=show)
-    _plot_abs_lfc(final_df, args.output_lfc_plot, show_outliers=show)
+    _plot_pvalue(final_df, args.output_pval_plot, show_outliers=SHOW_OUTLIERS)
+    _plot_abs_lfc(final_df, args.output_lfc_plot, show_outliers=SHOW_OUTLIERS)
 
     logger.info("Done. Generated: %s, %s", args.output_pval_plot, args.output_lfc_plot)
 
