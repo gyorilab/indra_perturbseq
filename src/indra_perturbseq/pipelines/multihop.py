@@ -15,6 +15,12 @@ import pandas as pd
 from indra_perturbseq.graph import is_hgnc_node, load_graph
 from indra_perturbseq.hgnc import normalize_hgnc_symbol
 from indra_perturbseq.pipelines.common import warn_deprecated_flags
+from indra_perturbseq.pipelines.enrichment import (
+    add_enrichment_cli_args,
+    annotate_mesh_terms,
+    enrich_evidence,
+    validate_enrichment_args,
+)
 from indra_perturbseq.pipelines.multihop_core import (
     load_intermediates_from_args,
     load_sources_from_args,
@@ -99,8 +105,11 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap.add_argument("--output-filename", default="all_genes_all_hops.csv")
     ap.add_argument("--workers", type=int, default=1)
     ap.add_argument("--verbose", action="store_true")
+    add_enrichment_cli_args(ap)
     add_log_level_arg(ap, default="INFO")
-    return ap.parse_args(argv)
+    args = ap.parse_args(argv)
+    validate_enrichment_args(args, ap)
+    return args
 
 
 def _validate_paths(args: argparse.Namespace) -> None:
@@ -215,11 +224,15 @@ def main(argv: list[str] | None = None) -> None:
 
     if args.combine_output:
         combined = pd.concat(list(results.values()), ignore_index=True)
+        combined = enrich_evidence(combined, args)
+        combined = annotate_mesh_terms(combined, args)
         out = os.path.join(args.output_dir, args.output_filename)
         combined.to_csv(out, index=False)
         logger.info("Combined: %d rows -> %s", len(combined), out)
     else:
         for raw, df in results.items():
+            df = enrich_evidence(df, args)
+            df = annotate_mesh_terms(df, args)
             out = os.path.join(args.output_dir, f"{raw}_all_hops.csv")
             df.to_csv(out, index=False)
             logger.info("%s: %d rows -> %s", raw, len(df), out)
