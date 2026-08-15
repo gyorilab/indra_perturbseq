@@ -1,13 +1,5 @@
 """Network visualizations for multi-hop pathway analysis.
-
-Provides two subcommands:
-
-``pathway``
-    Interactive (Plotly HTML) and static (matplotlib PNG) network
-    visualizations of top-N multi-hop pathways.
-``overlay``
-    Side-by-side INDRA vs OmniPath pathway comparison for the same
-    source-target gene pairs, with edge coloring by database origin.
+Provides two subcommands:.
 """
 
 from __future__ import annotations
@@ -15,15 +7,72 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+from typing import TYPE_CHECKING
 
-import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
 import pandas as pd
-import plotly.graph_objects as go
-from matplotlib.lines import Line2D
+from indra_perturbseq.pipelines.common import warn_deprecated_flags
+from indra_perturbseq.runtime import add_log_level_arg, configure_logging
+
+if TYPE_CHECKING:
+    import plotly.graph_objects as go
 
 logger = logging.getLogger(__name__)
+
+
+def _warn_deprecated_flags(argv: list[str] | None) -> None:
+    warn_deprecated_flags(
+        argv,
+        {
+            "--input-csv": "--input",
+            "--indra-csv": "--indra",
+            "--omnipath-csv": "--omnipath",
+        },
+        logger,
+    )
+
+
+def _ensure_parent_dir(path: str) -> None:
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+
+
+def _overlay_edge_type(sources: set[str]) -> str:
+    if sources == {"indra", "omnipath"}:
+        return "both"
+    if "indra" in sources:
+        return "indra"
+    return "omnipath"
+
+
+def _edge_source_counts(edge_sources: dict[tuple[str, str], set[str]]) -> tuple[int, int, int]:
+    indra_only = sum(1 for s in edge_sources.values() if s == {"indra"})
+    omni_only = sum(1 for s in edge_sources.values() if s == {"omnipath"})
+    shared = sum(1 for s in edge_sources.values() if s == {"indra", "omnipath"})
+    return indra_only, omni_only, shared
+
+
+def _node_buckets(
+    G: nx.DiGraph,
+    pos: dict[str, tuple[float, float]],
+    intermediates: set[str],
+    hover_builder,
+    size_builder,
+    label_builder,
+) -> dict[str, dict[str, list]]:
+    buckets = {
+        "intermediate": {"x": [], "y": [], "text": [], "size": [], "labels": []},
+        "source_target": {"x": [], "y": [], "text": [], "size": [], "labels": []},
+    }
+    for node in G.nodes():
+        x, y = pos[node]
+        ntype = "intermediate" if node in intermediates else "source_target"
+        buckets[ntype]["x"].append(x)
+        buckets[ntype]["y"].append(y)
+        buckets[ntype]["text"].append(hover_builder(node, ntype))
+        buckets[ntype]["size"].append(size_builder(node))
+        buckets[ntype]["labels"].append(label_builder(node))
+    return buckets
 
 
 # Shared helpers
@@ -42,6 +91,8 @@ def _build_edge_trace(
     hover: str, width: float, color: str,
 ) -> go.Scatter:
     """Create a single Plotly edge line trace."""
+    import plotly.graph_objects as go
+
     return go.Scatter(
         x=[x0, x1, None], y=[y0, y1, None],
         mode="lines",
@@ -59,6 +110,8 @@ def _node_scatter(
     edge_width: float = 2.0,
 ) -> go.Scatter:
     """Create a Plotly scatter trace for a class of nodes."""
+    import plotly.graph_objects as go
+
     return go.Scatter(
         x=xs, y=ys,
         mode="markers+text", name=name,
@@ -161,6 +214,8 @@ def plot_pathway_interactive(
     spring_k :
         Spring layout ``k`` parameter.
     """
+    import plotly.graph_objects as go
+
     pos = nx.spring_layout(G, k=spring_k, iterations=100, seed=42)
     centrality = nx.degree_centrality(G)
     degrees = dict(G.degree())
@@ -175,25 +230,17 @@ def plot_pathway_interactive(
         for e in G.edges()
     ]
 
-    buckets: dict[str, dict[str, list]] = {
-        k: {"x": [], "y": [], "text": [], "size": [], "labels": []}
-        for k in ("intermediate", "source_target")
-    }
-
-    for node in G.nodes():
-        x, y = pos[node]
-        deg = degrees[node]
-        ntype = "intermediate" if node in intermediates else "source_target"
-        label = "Intermediate" if ntype == "intermediate" else "Source/Target"
-        hover = (
-            f"<b>{node}</b><br>Type: {label}<br>"
-            f"Connections: {deg}<br>Centrality: {centrality[node]:.3f}"
-        )
-        buckets[ntype]["x"].append(x)
-        buckets[ntype]["y"].append(y)
-        buckets[ntype]["text"].append(hover)
-        buckets[ntype]["size"].append(10 + deg * 2)
-        buckets[ntype]["labels"].append(node if deg >= degree_thr else "")
+    buckets = _node_buckets(
+        G,
+        pos,
+        intermediates,
+        hover_builder=lambda node, ntype: (
+            f"<b>{node}</b><br>Type: {'Intermediate' if ntype == 'intermediate' else 'Source/Target'}<br>"
+            f"Connections: {degrees[node]}<br>Centrality: {centrality[node]:.3f}"
+        ),
+        size_builder=lambda node: 10 + degrees[node] * 2,
+        label_builder=lambda node: node if degrees[node] >= degree_thr else "",
+    )
 
     int_trace = _node_scatter(
         **buckets["intermediate"],
@@ -230,7 +277,7 @@ def plot_pathway_interactive(
         ),
     )
 
-    os.makedirs(os.path.dirname(out_html) or ".", exist_ok=True)
+    _ensure_parent_dir(out_html)
     fig.write_html(out_html)
     logger.info("Interactive HTML saved: %s", out_html)
 
@@ -260,6 +307,8 @@ def plot_pathway_static(
     min_label_degree :
         Only label nodes with degree >= this value.
     """
+    import matplotlib.pyplot as plt
+
     fig, ax = plt.subplots(figsize=(16, 16))
     pos = nx.spring_layout(G, k=0.5, iterations=50, seed=42)
 
@@ -285,7 +334,7 @@ def plot_pathway_static(
     ax.axis("off")
     fig.tight_layout()
 
-    os.makedirs(os.path.dirname(out_png) or ".", exist_ok=True)
+    _ensure_parent_dir(out_png)
     fig.savefig(out_png, dpi=300, bbox_inches="tight")
     plt.close(fig)
     logger.info("Static PNG saved: %s", out_png)
@@ -480,19 +529,15 @@ def plot_overlay_interactive(
     spring_k :
         Spring layout ``k`` parameter.
     """
+    import plotly.graph_objects as go
+
     pos = nx.spring_layout(G, k=spring_k, iterations=100, seed=42)
 
     edge_traces: list[go.Scatter] = []
     for edge in G.edges():
         x0, y0 = pos[edge[0]]
         x1, y1 = pos[edge[1]]
-        sources = edge_sources.get(edge, set())
-        if sources == {"indra", "omnipath"}:
-            etype = "both"
-        elif "indra" in sources:
-            etype = "indra"
-        else:
-            etype = "omnipath"
+        etype = _overlay_edge_type(edge_sources.get(edge, set()))
 
         hover = f"<b>{edge[0]} -> {edge[1]}</b><br>Database: {etype.upper()}"
         info = edge_info.get(edge, {})
@@ -524,22 +569,18 @@ def plot_overlay_interactive(
         ),
     ]
 
-    buckets: dict[str, dict[str, list]] = {
-        k: {"x": [], "y": [], "text": [], "size": [], "labels": []}
-        for k in ("intermediate", "source_target")
-    }
-
-    for node in G.nodes():
-        x, y = pos[node]
-        deg = G.degree(node)
-        ntype = "intermediate" if node in intermediates else "source_target"
-        label = "Intermediate" if ntype == "intermediate" else "Source/Target"
-        hover = f"<b>{node}</b><br>Type: {label}<br>Connections: {deg}"
-        buckets[ntype]["x"].append(x)
-        buckets[ntype]["y"].append(y)
-        buckets[ntype]["text"].append(hover)
-        buckets[ntype]["size"].append(15 + deg * 3)
-        buckets[ntype]["labels"].append(node)
+    degrees = dict(G.degree())
+    buckets = _node_buckets(
+        G,
+        pos,
+        intermediates,
+        hover_builder=lambda node, ntype: (
+            f"<b>{node}</b><br>Type: {'Intermediate' if ntype == 'intermediate' else 'Source/Target'}"
+            f"<br>Connections: {degrees[node]}"
+        ),
+        size_builder=lambda node: 15 + degrees[node] * 3,
+        label_builder=lambda node: node,
+    )
 
     int_trace = _node_scatter(
         **buckets["intermediate"],
@@ -552,9 +593,7 @@ def plot_overlay_interactive(
         edge_color="darkblue", font_size=11, edge_width=2.5, opacity=0.95,
     )
 
-    indra_only = sum(1 for s in edge_sources.values() if s == {"indra"})
-    omni_only = sum(1 for s in edge_sources.values() if s == {"omnipath"})
-    shared = sum(1 for s in edge_sources.values() if s == {"indra", "omnipath"})
+    indra_only, omni_only, shared = _edge_source_counts(edge_sources)
     total = indra_only + omni_only + shared
     overlap_pct = 100.0 * shared / total if total > 0 else 0.0
 
@@ -596,7 +635,7 @@ def plot_overlay_interactive(
         ),
     )
 
-    os.makedirs(os.path.dirname(out_html) or ".", exist_ok=True)
+    _ensure_parent_dir(out_html)
     fig.write_html(out_html)
     logger.info("Overlay HTML saved: %s", out_html)
 
@@ -626,6 +665,9 @@ def plot_overlay_static(
     spring_k :
         Spring layout ``k`` parameter.
     """
+    import matplotlib.pyplot as plt
+    from matplotlib.lines import Line2D
+
     fig, ax = plt.subplots(figsize=(20, 16))
     pos = nx.spring_layout(G, k=spring_k, iterations=100, seed=42)
 
@@ -635,13 +677,7 @@ def plot_overlay_static(
         "both": ([], "darkviolet", 3.5, 0.8, 20),
     }
     for e in G.edges():
-        s = edge_sources.get(e, set())
-        if s == {"indra", "omnipath"}:
-            edge_groups["both"][0].append(e)
-        elif "indra" in s:
-            edge_groups["indra"][0].append(e)
-        else:
-            edge_groups["omnipath"][0].append(e)
+        edge_groups[_overlay_edge_type(edge_sources.get(e, set()))][0].append(e)
 
     for edges, color, width, alpha, arrow in edge_groups.values():
         if edges:
@@ -667,9 +703,7 @@ def plot_overlay_static(
         G, pos, font_size=11, font_weight="bold", font_family="sans-serif", ax=ax,
     )
 
-    indra_only = sum(1 for s in edge_sources.values() if s == {"indra"})
-    omni_only = sum(1 for s in edge_sources.values() if s == {"omnipath"})
-    shared = sum(1 for s in edge_sources.values() if s == {"indra", "omnipath"})
+    indra_only, omni_only, shared = _edge_source_counts(edge_sources)
     stats = f"INDRA only: {indra_only}\nOmniPath only: {omni_only}\nAgreed: {shared}"
     ax.text(
         0.98, 0.02, stats, transform=ax.transAxes, fontsize=12,
@@ -691,7 +725,7 @@ def plot_overlay_static(
     ax.axis("off")
     fig.tight_layout()
 
-    os.makedirs(os.path.dirname(out_png) or ".", exist_ok=True)
+    _ensure_parent_dir(out_png)
     fig.savefig(out_png, dpi=300, bbox_inches="tight", facecolor="white")
     plt.close(fig)
     logger.info("Overlay PNG saved: %s", out_png)
@@ -729,16 +763,23 @@ def _run_overlay(args: argparse.Namespace) -> None:
 
 def main(argv: list[str] | None = None) -> None:
     """CLI entry point for network visualizations."""
+    _warn_deprecated_flags(argv)
     ap = argparse.ArgumentParser(
         description="Network visualizations for multi-hop pathway analysis.",
     )
+    add_log_level_arg(ap, default="INFO")
     sub = ap.add_subparsers(dest="command", required=True)
 
     # -- pathway -----------------------------------------------------------
     pw = sub.add_parser(
         "pathway", help="Visualize top-N multi-hop pathways as a network.",
     )
-    pw.add_argument("--input", required=True, help="Hop CSV (e.g. 3-hop results)")
+    pw.add_argument(
+        "--input",
+        "--input-csv",
+        required=True,
+        help="Hop CSV (e.g. 3-hop results)",
+    )
     pw.add_argument("--top-n", type=int, default=100,
                     help="Number of top pathways to plot (default: 100)")
     pw.add_argument("--html", help="Output interactive HTML path")
@@ -754,8 +795,18 @@ def main(argv: list[str] | None = None) -> None:
     ov = sub.add_parser(
         "overlay", help="Compare INDRA vs OmniPath pathways for same gene pairs.",
     )
-    ov.add_argument("--indra", required=True, help="INDRA 3-hop results CSV")
-    ov.add_argument("--omnipath", required=True, help="OmniPath 3-hop results CSV")
+    ov.add_argument(
+        "--indra",
+        "--indra-csv",
+        required=True,
+        help="INDRA 3-hop results CSV",
+    )
+    ov.add_argument(
+        "--omnipath",
+        "--omnipath-csv",
+        required=True,
+        help="OmniPath 3-hop results CSV",
+    )
     ov.add_argument("--n-pairs", type=int, default=20,
                     help="Number of top INDRA pairs to compare (default: 20)")
     ov.add_argument("--html", help="Output interactive HTML path")
@@ -765,6 +816,7 @@ def main(argv: list[str] | None = None) -> None:
     ov.set_defaults(func=_run_overlay)
 
     args = ap.parse_args(argv)
+    configure_logging(args.log_level)
     args.func(args)
 
 

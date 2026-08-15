@@ -1,13 +1,5 @@
 """GWAS-aware filtering of 2-hop endothelial pathway data.
-
-Pipeline:
-
-1. Filter to endothelial intermediates (optionally excluding GWAS genes
-   from the endothelial set).
-2. Select top *N* rows by absolute log-fold-change with (source, target)
-   uniqueness.
-3. Collect all rows containing any GWAS gene, apply per-gene uniqueness,
-   and annotate with directionality and GWAS gene membership.
+Pipeline:.
 """
 
 from __future__ import annotations

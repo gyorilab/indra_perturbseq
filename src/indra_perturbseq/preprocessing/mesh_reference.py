@@ -1,16 +1,11 @@
 """Build and expand a comprehensive MeSH reference list.
-
-Consolidates seed-family expansion (CAD, Endothelial, Heart, Heart Disease)
-and mechanistic-seed expansion into a single workflow.  Seeds are expanded
-via Neo4j ``isa``/``partof`` child traversal, and optionally augmented with
-MeSH terms extracted from a PubMed paper.
+This module provides preprocessing utilities and command-line data preparation workflows.
 """
 from __future__ import annotations
 
 import argparse
 import logging
 import time
-from typing import Optional
 
 import pandas as pd
 from indra_cogex.client import get_mesh_ids_for_pmids
@@ -19,9 +14,6 @@ from indra_cogex.representation import norm_id
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Broad MeSH terms to filter out of child-expansion results
-# ---------------------------------------------------------------------------
 BROAD_STOPLIST: set[str] = {
     "D006801",  # Humans
     "D000818",  # Animals
@@ -35,9 +27,6 @@ BROAD_STOPLIST: set[str] = {
     "D013964",  # Subcellular Fractions
 }
 
-# ---------------------------------------------------------------------------
-# Seed families
-# ---------------------------------------------------------------------------
 CAD_SEEDS: list[tuple[str, str]] = [
     ("D003324", "Coronary Artery Disease"),
     ("D001161", "Atherosclerosis"),
@@ -139,11 +128,8 @@ MECHANISTIC_SEEDS: dict[str, str] = {
 }
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 def _safe_norm_mesh(db_id: str) -> str:
-    """Normalize a bare MeSH descriptor ID to a CURIE via ``indra_cogex``."""
+    """Normalize a bare MeSH descriptor ID to CURIE."""
     try:
         curie = norm_id("mesh", db_id)
         return curie or f"mesh:{db_id}"
@@ -158,24 +144,7 @@ def _get_mesh_children(
     *,
     client: Neo4jClient,
 ) -> set[tuple[str, str, str]]:
-    """Return ``(child_id, child_name, parent_name)`` for all descendants.
-
-    Parameters
-    ----------
-    mesh_id
-        Bare MeSH descriptor ID (e.g. ``"D003324"``).
-    parent_name
-        Human-readable name of the parent term.
-    depth
-        Maximum traversal depth; ``None`` for unbounded.
-    client
-        Active Neo4j client.
-
-    Returns
-    -------
-    set[tuple[str, str, str]]
-        Set of ``(child_mesh_id, child_name, parent_name)`` tuples.
-    """
+    """Return ``(child_id, child_name, parent_name)`` for descendants."""
     curie = _safe_norm_mesh(mesh_id)
     if not curie:
         return set()
@@ -212,13 +181,7 @@ def _expand_family(
     origin: str,
     client: Neo4jClient,
 ) -> set[tuple[str, str, str, str]]:
-    """Expand a seed family and tag each row with *origin* and *child_of*.
-
-    Returns
-    -------
-    set[tuple[str, str, str, str]]
-        ``(mesh_id, mesh_name, origin, child_of)`` tuples.
-    """
+    """Expand one seed family and tag each row with origin/parent."""
     results: set[tuple[str, str, str, str]] = set()
     for mid, name in seeds:
         results.add((mid, name, origin, ""))
@@ -232,7 +195,7 @@ def _get_names_for_mesh_ids(
     *,
     client: Neo4jClient,
 ) -> dict[str, str]:
-    """Fetch human-readable MeSH names for a list of bare MeSH IDs."""
+    """Fetch ``{mesh_id: mesh_name}`` for bare MeSH IDs."""
     if not mesh_ids:
         return {}
     normalized = [_safe_norm_mesh(mid) for mid in mesh_ids]
@@ -260,9 +223,6 @@ def _get_names_for_mesh_ids(
     return name_map
 
 
-# ---------------------------------------------------------------------------
-# Main workflow
-# ---------------------------------------------------------------------------
 def build_mesh_reference(
     paper_pmid: str | None,
     child_depth: int,
@@ -270,25 +230,7 @@ def build_mesh_reference(
     *,
     client: Neo4jClient | None = None,
 ) -> pd.DataFrame:
-    """Build or expand a comprehensive MeSH reference list.
-
-    Parameters
-    ----------
-    paper_pmid
-        Optional PMID from which to extract MeSH annotations.
-    child_depth
-        Depth for Neo4j child traversal of seed terms.
-    existing_csv
-        If given, load this CSV first and append mechanistic-seed
-        expansions (the *expand* workflow).
-    client
-        Neo4j client; a new one is created if not supplied.
-
-    Returns
-    -------
-    pd.DataFrame
-        Columns: ``mesh_id, mesh_name, origin, child_of``.
-    """
+    """Build or expand the reference table with columns mesh_id/name/origin."""
     t0 = time.time()
     if client is None:
         client = Neo4jClient()
@@ -348,7 +290,7 @@ def build_mesh_reference(
 
 
 def main(argv: list[str] | None = None) -> None:
-    """CLI entry point for building MeSH reference lists."""
+    """CLI entry point."""
     parser = argparse.ArgumentParser(
         description="Build or expand a comprehensive MeSH reference list.",
     )

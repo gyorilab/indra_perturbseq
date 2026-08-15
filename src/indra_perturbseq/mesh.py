@@ -1,4 +1,6 @@
-"""MeSH term annotation via INDRA CoGEx."""
+"""MeSH term annotation via INDRA CoGEx.
+This module provides shared utilities used across the INDRA Perturb-seq codebase.
+"""
 
 from __future__ import annotations
 
@@ -6,6 +8,11 @@ import logging
 import re
 
 import pandas as pd
+from indra_perturbseq.services.neo4j import (
+    get_neo4j_client,
+    safe_get_mesh_ids_for_pmids,
+    safe_query_tx,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +53,7 @@ def build_mesh_id_to_name_map(client) -> dict[str, str]:
         "RETURN b.id AS mesh_id, b.name AS mesh_name"
     )
     mapping: dict[str, str] = {}
-    for r in client.query_tx(query):
+    for r in safe_query_tx(client, query):
         if isinstance(r, dict):
             mid, name = r.get("mesh_id"), r.get("mesh_name")
         else:
@@ -86,9 +93,6 @@ def annotate_mesh(
     mesh_batch_size :
         Batch size for ``get_mesh_ids_for_pmids`` calls.
     """
-    from indra_cogex.client.neo4j_client import Neo4jClient
-    from indra_cogex.client import get_mesh_ids_for_pmids
-
     if pmid_columns is None:
         pmid_columns = [c for c in ("pmids_hop1", "pmids_hop2", "pmids_hop3")
                         if c in df.columns]
@@ -110,13 +114,13 @@ def annotate_mesh(
     if not all_pmids_sorted:
         return df
 
-    client = Neo4jClient()
+    client = get_neo4j_client()
     id_to_name = build_mesh_id_to_name_map(client)
 
     pmid_to_mesh: dict[str, list] = {}
     for i in range(0, len(all_pmids_sorted), mesh_batch_size):
         batch = all_pmids_sorted[i:i + mesh_batch_size]
-        pmid_to_mesh.update(get_mesh_ids_for_pmids(batch, client=client))
+        pmid_to_mesh.update(safe_get_mesh_ids_for_pmids(batch, client=client))
 
     def _mesh_for_cell(cell: str) -> str:
         pmids = [p for p in str(cell).replace(" ", "").split(";") if p.isdigit()]

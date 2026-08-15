@@ -1,11 +1,5 @@
-"""TP / FP / FN evaluation of INDRA predictions against bulk RNA-seq DEGs.
-
-For each source gene:
-  - Predicted targets: INDRA path targets restricted to allowed hops and
-    an endothelial gene universe.
-  - Empirical positives: bulk DEGs at FDR < threshold.
-  - Confusion-matrix statistics are computed per gene and summarised.
-"""
+"""Evaluate INDRA-predicted targets against bulk RNA DEG evidence.
+Computes per-source confusion metrics and aggregate performance summaries."""
 
 from __future__ import annotations
 

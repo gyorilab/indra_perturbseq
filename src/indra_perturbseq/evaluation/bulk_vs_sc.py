@@ -1,9 +1,5 @@
 """Compare bulk RNA-seq vs scRNA-seq DEG overlap.
-
-For each source gene, loads bulk and scRNA-seq DEG results, restricts to
-an endothelial gene universe, and computes overlap statistics (Jaccard
-index, intersection, fraction of overlap) for both the tested gene sets
-and the FDR-significant gene sets.
+For each source gene, loads bulk and scRNA-seq DEG results, restricts to.
 """
 
 from __future__ import annotations

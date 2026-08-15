@@ -1,10 +1,5 @@
-"""Compute TP/FP/TN/FN and TPR/FPR across p-value thresholds.
-
-Works for any hop count. Requires:
-- One or more path CSVs with source/target columns (union is taken)
-- target_validation_expanded.csv (for filtered sources)
-- DEG directory with <SOURCE>_vs_control.csv files
-"""
+"""Compute TP/FP/TN/FN, TPR, and FPR over p-value thresholds.
+Combines explained path pairs with DEG-based positives per source."""
 
 from __future__ import annotations
 

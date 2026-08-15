@@ -14,6 +14,7 @@ import pandas as pd
 from indra.assemblers.html.assembler import HtmlAssembler
 from indra_cogex.client.neo4j_client import Neo4jClient
 from indra_cogex.client.queries import get_statements
+from indra_perturbseq.services.neo4j import get_neo4j_client
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +80,7 @@ def enrich_and_assemble(
         The enriched dataframe and the deduplicated statement list.
     """
     if client is None:
-        client = Neo4jClient()
+        client = get_neo4j_client()
 
     df = df.copy()
     hop1_hashes: list[str] = []
@@ -97,10 +98,23 @@ def enrich_and_assemble(
              float(row["belief_2"]), int(row["evidence_2"]),
              hop2_hashes, hop2_urls),
         ), start=1):
-            stmts = get_statements(
-                agent=agent, other_agent=other, rel_types=stype,
-                evidence_limit=50, client=client,
-            )
+            try:
+                stmts = get_statements(
+                    agent=agent,
+                    other_agent=other,
+                    rel_types=stype,
+                    evidence_limit=50,
+                    client=client,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Statement lookup failed for hop %d (%s -> %s): %s",
+                    hop,
+                    agent,
+                    other,
+                    exc,
+                )
+                stmts = []
             matched = _find_matching_statement(stmts, belief, evcnt)
             if matched:
                 h = matched.get_hash()

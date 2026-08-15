@@ -1,12 +1,5 @@
-"""Export false-positive paths on per-source negative target sets.
-
-For each source gene A:
-  - Universe U(A): all genes in A's DEG CSV
-  - Positives P(A): subset with p < threshold
-  - Negatives N(A): U(A) - P(A) - {A}
-
-Then run 1/2/3-hop pathfinding on the negative set.
-"""
+"""Export false-positive paths using DEG-derived negative target sets.
+Runs hop-based pathfinding and records supporting edge statement metadata."""
 
 from __future__ import annotations
 

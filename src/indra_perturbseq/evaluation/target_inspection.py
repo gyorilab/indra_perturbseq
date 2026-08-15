@@ -1,10 +1,5 @@
-"""Count how many source-gene parents each DEG target has.
-
-For every source gene that passes a flag filter, loads its DEG CSV,
-identifies significant targets (p < threshold), and records which
-sources each target is a DEG of.  Outputs a CSV with target, parent
-count, and semicolon-separated parent list.
-"""
+"""Inspect DEG targets shared across filtered source genes.
+Counts parent sources per target and exports parent lists."""
 
 from __future__ import annotations
 

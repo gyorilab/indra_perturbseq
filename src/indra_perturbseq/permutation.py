@@ -1,4 +1,5 @@
-"""Label-permuted network view for null-model evaluation."""
+"""Create a label-permuted view of HGNC nodes in a graph.
+Preserves topology while enabling reproducible null-model evaluations."""
 
 from __future__ import annotations
 

@@ -1,12 +1,5 @@
 """MeSH coverage analysis for INDRA causal-path statements.
-
-Computes what percentage of INDRA statements (deduplicated by
-subject / predicate / object) in causal paths have at least one MeSH
-term from a reference list, broken down by hop number.
-
-A "statement" is the triple (from_gene, stmt_type, to_gene).  The same
-triple appearing in multiple paths is deduplicated; PMID and MeSH
-booleans are OR-merged across occurrences.
+Computes what percentage of INDRA statements (deduplicated by.
 """
 
 from __future__ import annotations

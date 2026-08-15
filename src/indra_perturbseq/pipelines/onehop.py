@@ -1,20 +1,29 @@
-"""1-hop pathway extraction from an INDRA network export graph."""
+"""1-hop pathway extraction from an INDRA network export graph.
+This module provides pipeline execution and command-line workflow orchestration.
+"""
 
 from __future__ import annotations
 
 import argparse
 import logging
-import os
 import time
 
 import pandas as pd
 
-from indra_perturbseq.deg import load_deg_targets, pick_sig_column
-from indra_perturbseq.evidence import rich_stmt_text_from_hash
-from indra_perturbseq.gene_lists import load_source_genes
+from indra_perturbseq.deg import load_deg_targets
+from indra_perturbseq.evidence import (
+    enrich_evidence_1hop,
+    rich_stmt_text_from_hash,
+)
 from indra_perturbseq.graph import is_hgnc_node, load_graph
 from indra_perturbseq.hgnc import normalize_hgnc_symbol
-from indra_perturbseq.statements import iter_incdec_statements
+from indra_perturbseq.mesh import annotate_mesh
+from indra_perturbseq.pipelines.common import (
+    load_sources_from_args,
+    warn_deprecated_flags,
+    write_split_outputs,
+)
+from indra_perturbseq.statements import indra_html_url, iter_incdec_statements
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +74,7 @@ def run_1hop(
                     "logfoldchange": deg_map.get(tgt, {}).get("logfoldchange"),
                     "pval": deg_map.get(tgt, {}).get("pval"),
                     "stmt_hash": s.get("stmt_hash"),
+                    "hop1_indra_url": indra_html_url(s.get("stmt_hash")),
                     "source_counts": s.get("source_counts"),
                 })
 
@@ -78,7 +88,7 @@ def run_1hop(
     return df.reindex(columns=[
         "source", "target", "stmt_type", "english_stmt",
         "belief", "evidence_count", "logfoldchange", "pval",
-        "stmt_hash", "source_counts",
+        "stmt_hash", "hop1_indra_url", "source_counts",
     ])
 
 
@@ -102,49 +112,76 @@ def _fill_english_statements(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def _reorder_columns(df: pd.DataFrame) -> pd.DataFrame:
+    cols = [
+        "source", "target", "stmt_type", "english_stmt",
+        "belief", "evidence_count", "logfoldchange", "pval",
+        "evidence_text_hop1", "pmids_hop1", "Annotated MeSH terms hop1",
+        "stmt_hash", "hop1_indra_url", "source_counts",
+    ]
+    keep = [c for c in cols if c in df.columns]
+    extra = [c for c in df.columns if c not in keep]
+    return df[keep + extra]
+
+
 def main(argv: list[str] | None = None) -> None:
+    warn_deprecated_flags(
+        argv,
+        {
+            "--perturbations-csv": "--source-genes-csv",
+            "--out-csv-main": "--output-main",
+            "--out-csv-self": "--output-self-targets",
+            "--out-csv-self-targets": "--output-self-targets",
+        },
+        logger,
+    )
     ap = argparse.ArgumentParser(
         description="1-hop pathway extraction from INDRA network export.",
     )
     ap.add_argument("--graph-pkl", required=True,
                     help="Path to INDRA network export .pkl")
-    ap.add_argument("--source-genes-csv", required=True,
+    ap.add_argument("--source-genes-csv", "--perturbations-csv", required=True,
                     help="target_validation_expanded.csv")
     ap.add_argument("--deg-dir", required=True,
                     help="Folder with <GENE>_vs_control.csv files")
-    ap.add_argument("--output-main", required=True,
+    ap.add_argument("--mesh-reference", default=None,
+                    help="MeSH reference CSV for term filtering")
+    ap.add_argument("--output-main", "--out-csv-main", required=True,
                     help="Output CSV for non-self paths")
-    ap.add_argument("--output-self-targets", required=True,
-                    help="Output CSV for self paths")
+    ap.add_argument(
+        "--output-self-targets",
+        "--out-csv-self",
+        "--out-csv-self-targets",
+        required=True,
+        help="Output CSV for self paths",
+    )
     ap.add_argument("--filter-column", default="analysis_flag")
     ap.add_argument("--filter-value", default="Use_for_analysis")
     ap.add_argument("--gene-column", default="Gene")
     ap.add_argument("--p-threshold", type=float, default=0.05)
     ap.add_argument("--prefer-fdr", action="store_true")
+    ap.add_argument("--mesh-batch-size", type=int, default=200)
     args = ap.parse_args(argv)
 
     graph, _ = load_graph(args.graph_pkl)
 
-    genes = load_source_genes(
-        args.source_genes_csv,
-        gene_column=args.gene_column,
-        filter_column=args.filter_column,
-        filter_value=args.filter_value,
-    )
+    genes = load_sources_from_args(args)
 
     df = run_1hop(graph, genes, args.deg_dir, args.p_threshold, args.prefer_fdr)
     df = _fill_english_statements(df)
-
-    main_df = df[df["source"] != df["target"]].copy()
-    self_df = df[df["source"] == df["target"]].copy()
-
-    os.makedirs(os.path.dirname(args.output_main) or ".", exist_ok=True)
-    os.makedirs(os.path.dirname(args.output_self_targets) or ".", exist_ok=True)
-    main_df.to_csv(args.output_main, index=False)
-    self_df.to_csv(args.output_self_targets, index=False)
-
-    logger.info("Non-self rows: %d -> %s", len(main_df), args.output_main)
-    logger.info("Self rows:     %d -> %s", len(self_df), args.output_self_targets)
+    df = enrich_evidence_1hop(df)
+    if args.mesh_reference:
+        logger.info("Annotating MeSH terms...")
+        df = annotate_mesh(
+            df,
+            args.mesh_reference,
+            pmid_columns=["pmids_hop1"],
+            mesh_batch_size=args.mesh_batch_size,
+        )
+    else:
+        logger.warning("No --mesh-reference provided; skipping MeSH annotation.")
+    df = _reorder_columns(df)
+    write_split_outputs(df, args.output_main, args.output_self_targets, logger)
 
 
 if __name__ == "__main__":

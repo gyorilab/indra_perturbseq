@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import argparse
 import logging
-import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import networkx as nx
@@ -18,10 +17,16 @@ from indra.explanation.pathfinding.pathfinding import shortest_simple_paths
 
 from indra_perturbseq.deg import load_deg_targets
 from indra_perturbseq.evidence import enrich_evidence_3hop
-from indra_perturbseq.gene_lists import load_gene_set, load_source_genes
+from indra_perturbseq.gene_lists import load_gene_set
 from indra_perturbseq.graph import is_hgnc_node, load_graph
 from indra_perturbseq.hgnc import normalize_hgnc_symbol
 from indra_perturbseq.mesh import annotate_mesh
+from indra_perturbseq.pipelines.common import (
+    ensure_parent_dir,
+    load_sources_from_args,
+    warn_deprecated_flags,
+    write_split_outputs,
+)
 from indra_perturbseq.statements import best_statement, indra_html_url
 
 logger = logging.getLogger(__name__)
@@ -132,23 +137,39 @@ def _reorder_columns(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def main(argv: list[str] | None = None) -> None:
+    warn_deprecated_flags(
+        argv,
+        {
+            "--genes-csv": "--source-genes-csv",
+            "--out-csv-raw": "--output-raw",
+            "--out-csv-main": "--output-main",
+            "--out-csv-self": "--output-self-targets",
+            "--out-csv-self-targets": "--output-self-targets",
+        },
+        logger,
+    )
     ap = argparse.ArgumentParser(
         description="3-hop pipeline using INDRA network export + Neo4j evidence.",
     )
     ap.add_argument("--graph-pkl", required=True)
-    ap.add_argument("--source-genes-csv", required=True,
+    ap.add_argument("--source-genes-csv", "--genes-csv", required=True,
                     help="target_validation_expanded.csv")
     ap.add_argument("--deg-dir", required=True)
     ap.add_argument("--endothelial-list", required=True,
                     help="CSV with 'gene' column")
     ap.add_argument("--mesh-reference", required=True)
 
-    ap.add_argument("--output-raw", required=True,
+    ap.add_argument("--output-raw", "--out-csv-raw", required=True,
                     help="Raw 3-hop rows (pre-enrichment)")
-    ap.add_argument("--output-main", required=True,
+    ap.add_argument("--output-main", "--out-csv-main", required=True,
                     help="Final enriched non-self rows")
-    ap.add_argument("--output-self-targets", required=True,
-                    help="Final enriched self rows")
+    ap.add_argument(
+        "--output-self-targets",
+        "--out-csv-self",
+        "--out-csv-self-targets",
+        required=True,
+        help="Final enriched self rows",
+    )
 
     ap.add_argument("--filter-column", default="analysis_flag")
     ap.add_argument("--filter-value", default="Use_for_analysis")
@@ -168,14 +189,7 @@ def main(argv: list[str] | None = None) -> None:
     graph, _ = load_graph(args.graph_pkl)
     allowed = load_gene_set(args.endothelial_list)
 
-    genes = load_source_genes(
-        args.source_genes_csv,
-        gene_column=args.gene_column,
-        filter_column=args.filter_column,
-        filter_value=args.filter_value,
-        explicit_genes=args.genes,
-        limit=args.limit_genes,
-    )
+    genes = load_sources_from_args(args)
 
     all_rows: list[dict] = []
     logger.info("Running 3-hop extraction...")
@@ -200,7 +214,7 @@ def main(argv: list[str] | None = None) -> None:
 
     logger.info("Extraction complete: %d rows", len(df))
 
-    os.makedirs(os.path.dirname(args.output_raw) or ".", exist_ok=True)
+    ensure_parent_dir(args.output_raw)
     _reorder_columns(df.copy()).to_csv(args.output_raw, index=False)
     logger.info("Raw 3-hop rows saved: %s", args.output_raw)
 
@@ -210,16 +224,7 @@ def main(argv: list[str] | None = None) -> None:
     df = annotate_mesh(df, args.mesh_reference, mesh_batch_size=args.mesh_batch_size)
 
     df = _reorder_columns(df)
-    main_df = df[df["source"] != df["target"]].copy()
-    self_df = df[df["source"] == df["target"]].copy()
-
-    os.makedirs(os.path.dirname(args.output_main) or ".", exist_ok=True)
-    os.makedirs(os.path.dirname(args.output_self_targets) or ".", exist_ok=True)
-    main_df.to_csv(args.output_main, index=False)
-    self_df.to_csv(args.output_self_targets, index=False)
-
-    logger.info("Non-self rows: %d -> %s", len(main_df), args.output_main)
-    logger.info("Self rows:     %d -> %s", len(self_df), args.output_self_targets)
+    write_split_outputs(df, args.output_main, args.output_self_targets, logger)
 
 
 if __name__ == "__main__":

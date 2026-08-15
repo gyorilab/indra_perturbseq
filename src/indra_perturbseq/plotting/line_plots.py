@@ -1,4 +1,5 @@
-"""Overlaid TPR/FPR line plots across thresholds."""
+"""Plot overlaid TPR and FPR curves across thresholds.
+Compares one-hop and multi-hop performance from summary CSVs."""
 
 from __future__ import annotations
 

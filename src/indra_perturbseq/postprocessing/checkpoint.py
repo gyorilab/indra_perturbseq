@@ -1,8 +1,5 @@
 """Extract and inspect a 3-hop analysis checkpoint pickle file.
-
-Reads a checkpoint saved during long-running 3-hop analysis, logs
-summary statistics, and optionally exports the intermediate results
-to CSV.
+Reads a checkpoint saved during long-running 3-hop analysis, logs.
 """
 
 from __future__ import annotations

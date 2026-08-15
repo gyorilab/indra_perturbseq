@@ -1,35 +1,31 @@
-"""Evidence fetching from db.indra.bio and Neo4j."""
+"""Evidence fetching from db.indra.bio and Neo4j.
+This module provides shared utilities used across the INDRA Perturb-seq codebase.
+"""
 
 from __future__ import annotations
 
-import json
 import logging
 import re
-import urllib.request
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
 
 import numpy as np
 import pandas as pd
+from indra_perturbseq.services.indra_db import fetch_statement_json
+from indra_perturbseq.services.neo4j import get_neo4j_client, safe_query_tx
 
 logger = logging.getLogger(__name__)
 
-_USER_AGENT = "indra-perturbseq"
 _hash_cache_lock = Lock()
 _hash_cache: dict[int, dict] = {}
 
 
-# ------------------------------------------------------------------
 # db.indra.bio (REST)
-# ------------------------------------------------------------------
 
 def fetch_from_hash_json(stmt_hash: int) -> dict:
     """Fetch statement JSON from db.indra.bio by *stmt_hash*."""
-    url = f"https://db.indra.bio/statements/from_hash/{stmt_hash}?format=json"
-    req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
-    with urllib.request.urlopen(req, timeout=60) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    return fetch_statement_json(stmt_hash)
 
 
 def rich_stmt_text_from_hash(stmt_hash: int, cache: dict) -> str:
@@ -42,6 +38,8 @@ def rich_stmt_text_from_hash(stmt_hash: int, cache: dict) -> str:
         payload = (data.get("statements", {}) or {}).get(str(stmt_hash))
         if isinstance(payload, str):
             try:
+                import json
+
                 payload = json.loads(payload)
             except Exception:
                 payload = None
@@ -139,8 +137,35 @@ def format_evidence_text(text: str) -> str:
 
 
 # ------------------------------------------------------------------
-# 2-hop: parallel enrichment via db.indra.bio
+# 1/2-hop: parallel enrichment via db.indra.bio
 # ------------------------------------------------------------------
+
+def enrich_evidence_1hop(
+    df: pd.DataFrame,
+    max_workers: int = 8,
+) -> pd.DataFrame:
+    """Add evidence text and PMIDs columns for hop1 via db.indra.bio."""
+    df = df.copy()
+    for col in ("evidence_text_hop1", "pmids_hop1"):
+        if col not in df.columns:
+            df[col] = ""
+
+    def _work(idx: int) -> tuple:
+        row = df.loc[idx]
+        h1 = row.get("stmt_hash")
+        ev1, pm1 = "No evidence returned (db.indra.bio)", []
+        if isinstance(h1, (int, np.integer)):
+            ev1, pm1, _ = evidence_from_hash(int(h1))
+        return idx, format_evidence_text(ev1), "; ".join(pm1)
+
+    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+        futs = [ex.submit(_work, i) for i in df.index]
+        for fut in as_completed(futs):
+            i, ev1, pm1 = fut.result()
+            df.at[i, "evidence_text_hop1"] = ev1
+            df.at[i, "pmids_hop1"] = pm1
+    return df
+
 
 def enrich_evidence_2hop(
     df: pd.DataFrame,
@@ -214,9 +239,7 @@ def fetch_evidence_from_neo4j(
     batch_size: int = 2000,
 ) -> dict[int, dict]:
     """Batch-fetch evidence from Neo4j Evidence nodes by stmt_hash."""
-    from indra_cogex.client.neo4j_client import Neo4jClient
-
-    client = Neo4jClient()
+    client = get_neo4j_client()
     query = """
     UNWIND $hashes AS h
     MATCH (e:Evidence {stmt_hash: h})
@@ -231,9 +254,11 @@ def fetch_evidence_from_neo4j(
                 "pmids": [],
                 "sources": [],
             }
-        recs = client.query_tx(query, parameters={
-            "hashes": [int(x) for x in batch]
-        })
+        recs = safe_query_tx(
+            client,
+            query,
+            parameters={"hashes": [int(x) for x in batch]},
+        )
         for r in recs:
             if isinstance(r, dict):
                 sh, ev_nodes = r.get("stmt_hash"), r.get("ev_nodes", [])

@@ -1,8 +1,5 @@
 """Map C14 cardiovascular-tree names to MeSH descriptor IDs.
-
-Parses a pasted MeSH C14 tree listing, maps the extracted names to MeSH
-descriptor IDs via Neo4j, and augments with endothelium/endothelial keyword
-matches.
+Parses a pasted MeSH C14 tree listing, maps the extracted names to MeSH.
 """
 from __future__ import annotations
 

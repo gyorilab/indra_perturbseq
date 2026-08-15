@@ -1,23 +1,23 @@
 """4-hop pathway extraction via INDRA Neo4j (HGNC-only intermediates).
-
-Queries Neo4j for 4-hop paths: source -> mid1 -> mid2 -> mid3 -> target,
-restricting intermediates to HGNC identifiers and requiring the final
-edge to be IncreaseAmount or DecreaseAmount.  After path discovery the
-pipeline enriches each edge with evidence text and PMIDs.
+Queries Neo4j for 4-hop paths: source -> mid1 -> mid2 -> mid3 -> target,.
 """
 
 from __future__ import annotations
 
 import argparse
 import logging
-import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pandas as pd
 
 from indra_perturbseq.deg import load_deg_targets
 from indra_perturbseq.evidence import enrich_evidence_4hop
-from indra_perturbseq.gene_lists import load_source_genes
+from indra_perturbseq.pipelines.common import (
+    load_sources_from_args,
+    warn_deprecated_flags,
+    write_split_outputs,
+)
+from indra_perturbseq.services.neo4j import get_neo4j_client, safe_query_tx
 from indra_perturbseq.hgnc import normalize_hgnc_symbol
 from indra_perturbseq.statements import indra_html_url
 
@@ -87,8 +87,6 @@ def run_4hop_for_gene(
     :
         ``(rows, message)`` where *rows* is a list of result dicts.
     """
-    from indra_cogex.client.neo4j_client import Neo4jClient
-
     source_id = _hgnc_id_for_symbol(gene)
     if not source_id:
         return [], f"SKIP {gene}: no HGNC ID"
@@ -102,18 +100,17 @@ def run_4hop_for_gene(
     if not target_ids:
         return [], f"SKIP {gene}: no valid target HGNC IDs"
 
-    client = Neo4jClient()
+    client = get_neo4j_client()
     rows: list[dict] = []
 
     for tgt_symbol, tgt_id in target_ids.items():
-        try:
-            results = client.query_tx(
-                _4HOP_QUERY, source=source_id, target=tgt_id,
-                timeout=neo4j_timeout,
-            )
-        except Exception as exc:
-            logger.warning("%s -> %s query failed: %s", gene, tgt_symbol, exc)
-            continue
+        results = safe_query_tx(
+            client,
+            _4HOP_QUERY,
+            source=source_id,
+            target=tgt_id,
+            timeout=neo4j_timeout,
+        )
 
         for rec in results:
             if len(rec) < 21:
@@ -173,17 +170,32 @@ def _reorder_columns(df: pd.DataFrame) -> pd.DataFrame:
 
 def main(argv: list[str] | None = None) -> None:
     """CLI entry point for 4-hop pipeline."""
+    warn_deprecated_flags(
+        argv,
+        {
+            "--genes-csv": "--source-genes-csv",
+            "--out-csv-main": "--output-main",
+            "--out-csv-self": "--output-self-targets",
+            "--out-csv-self-targets": "--output-self-targets",
+        },
+        logger,
+    )
     ap = argparse.ArgumentParser(
         description="4-hop pipeline via INDRA Neo4j (HGNC-only intermediates).",
     )
-    ap.add_argument("--source-genes-csv", required=True,
+    ap.add_argument("--source-genes-csv", "--genes-csv", required=True,
                     help="target_validation_expanded.csv")
     ap.add_argument("--deg-dir", required=True,
                     help="Folder with <GENE>_vs_control.csv files")
-    ap.add_argument("--output-main", required=True,
+    ap.add_argument("--output-main", "--out-csv-main", required=True,
                     help="Output CSV for non-self paths")
-    ap.add_argument("--output-self-targets", required=True,
-                    help="Output CSV for self paths")
+    ap.add_argument(
+        "--output-self-targets",
+        "--out-csv-self",
+        "--out-csv-self-targets",
+        required=True,
+        help="Output CSV for self paths",
+    )
 
     ap.add_argument("--filter-column", default="analysis_flag")
     ap.add_argument("--filter-value", default="Use_for_analysis")
@@ -199,14 +211,7 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--neo4j-evidence-batch-size", type=int, default=2000)
     args = ap.parse_args(argv)
 
-    genes = load_source_genes(
-        args.source_genes_csv,
-        gene_column=args.gene_column,
-        filter_column=args.filter_column,
-        filter_value=args.filter_value,
-        explicit_genes=args.genes,
-        limit=args.limit_genes,
-    )
+    genes = load_sources_from_args(args)
 
     all_rows: list[dict] = []
     logger.info("Running 4-hop extraction for %d genes...", len(genes))
@@ -243,16 +248,7 @@ def main(argv: list[str] | None = None) -> None:
     df = enrich_evidence_4hop(df, neo4j_batch_size=args.neo4j_evidence_batch_size)
 
     df = _reorder_columns(df)
-    main_df = df[df["source"] != df["target"]].copy()
-    self_df = df[df["source"] == df["target"]].copy()
-
-    os.makedirs(os.path.dirname(args.output_main) or ".", exist_ok=True)
-    os.makedirs(os.path.dirname(args.output_self_targets) or ".", exist_ok=True)
-    main_df.to_csv(args.output_main, index=False)
-    self_df.to_csv(args.output_self_targets, index=False)
-
-    logger.info("Non-self rows: %d -> %s", len(main_df), args.output_main)
-    logger.info("Self rows:     %d -> %s", len(self_df), args.output_self_targets)
+    write_split_outputs(df, args.output_main, args.output_self_targets, logger)
 
 
 if __name__ == "__main__":

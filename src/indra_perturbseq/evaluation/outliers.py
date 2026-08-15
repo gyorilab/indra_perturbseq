@@ -1,10 +1,5 @@
-"""Outlier / hub gene evaluation.
-
-Two entry points:
-- ``recompute``: TPR/FPR with union of path CSVs (including outlier paths).
-- ``run_outliers``: 1/2-hop pathfinding using DEG-based target universe
-  (no p-value thresholding) for hub genes like TP53 / CDKN1A.
-"""
+"""Analyze outlier hub genes and their DEG target coverage.
+Also recomputes thresholded TPR/FPR with unioned path outputs."""
 
 from __future__ import annotations
 

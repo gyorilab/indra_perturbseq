@@ -1,14 +1,5 @@
 """Extract top pathway results.
-
-Two sub-commands:
-
-``top-pairs``
-    Extract the top *N* unique (source, target) pairs ranked by
-    absolute log-fold-change.
-
-``combine-hops``
-    Combine per-hop CSVs (1-hop through 4-hop) into a single
-    standardized CSV, selecting the top rows by |logFC| and p-value.
+Two sub-commands:.
 """
 
 from __future__ import annotations

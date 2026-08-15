@@ -1,8 +1,5 @@
 """Create a permuted (shuffled source labels) negative-control dataset.
-
-Reads per-gene DEG CSVs, collects significant source-target pairs, shuffles
-the source assignments, and removes accidental true matches to produce a
-clean negative-control dataset for benchmarking.
+Reads per-gene DEG CSVs, collects significant source-target pairs, shuffles.
 """
 from __future__ import annotations
 

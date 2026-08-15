@@ -1,11 +1,5 @@
 """Bulk RNA-seq differential expression analysis using limma-trend (InMoose).
-
-Each knockdown condition (2 replicates) is compared against negative-control
-samples.  Falls back to Welch t-test with BH correction if InMoose is
-unavailable.
-
-Output: one CSV per gene in ``<out-dir>/<GENE>_vs_control.csv`` with columns
-``names``, ``logfoldchanges``, ``pvals``, ``pvals_adj``.
+Each knockdown condition (2 replicates) is compared against negative-control.
 """
 from __future__ import annotations
 

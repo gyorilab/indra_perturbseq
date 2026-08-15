@@ -1,9 +1,5 @@
 """Build a combined endothelial gene list from auto-detected and manual genes.
-
-Auto-detection reads an scRNA-seq AnnData file, identifies endothelial-like
-cells via canonical markers, and extracts genes expressed above a minimum
-threshold in those cells.  The result is merged with a curated manual gene
-list to produce a deduplicated CSV.
+Auto-detection reads an scRNA-seq AnnData file, identifies endothelial-like.
 """
 from __future__ import annotations
 

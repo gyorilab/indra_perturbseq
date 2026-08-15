@@ -1,4 +1,5 @@
-"""Loading and filtering of gene lists (endothelial, filtered sources, etc.)."""
+"""Load and normalize gene lists used by analysis pipelines.
+Supports filtered source genes and generic gene-set CSV inputs."""
 
 from __future__ import annotations
 

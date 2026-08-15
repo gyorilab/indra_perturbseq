@@ -1,4 +1,5 @@
-"""HGNC symbol normalization."""
+"""Normalize gene symbols to current HGNC-approved names.
+Handles missing values and deterministic resolution of ambiguous IDs."""
 
 from __future__ import annotations
 

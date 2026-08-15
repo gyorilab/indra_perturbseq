@@ -1,4 +1,5 @@
-"""ROC curve computation and plotting from threshold-based TPR/FPR."""
+"""Compute and plot ROC curves from thresholded prediction metrics.
+Includes AUC calculation and publication-ready output figures."""
 
 from __future__ import annotations
 

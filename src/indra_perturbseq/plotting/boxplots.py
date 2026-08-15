@@ -1,4 +1,5 @@
-"""Boxplot visualizations for pathway p-value and LFC distributions."""
+"""Generate boxplots for hop-based pathway p-value and LFC distributions.
+Includes deduplication and unexplained target category comparisons."""
 
 from __future__ import annotations
 

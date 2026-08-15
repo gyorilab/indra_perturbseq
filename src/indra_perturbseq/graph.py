@@ -1,4 +1,5 @@
-"""INDRA network-export graph loading and node helpers."""
+"""Load pickled INDRA graphs with compatibility shims.
+Provides helpers for HGNC node checks and graph metadata logging."""
 
 import logging
 import pickle

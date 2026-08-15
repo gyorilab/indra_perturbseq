@@ -1,12 +1,5 @@
-"""Run per-gene differential expression on Perturb-seq AnnData.
-
-For each perturbation group, performs a Wilcoxon rank-sum test against the
-control group (negative-control + safe-targeting cells) using Scanpy and
-writes one ``<GENE>_vs_control.csv`` file per group.
-
-Output columns match the format expected by the downstream hop-analysis
-pipelines: ``names``, ``logfoldchanges``, ``pvals``, ``pvals_adj``.
-"""
+"""Run Perturb-seq differential expression against control cells.
+Exports one DEG CSV per perturbation group for downstream analysis."""
 
 from __future__ import annotations
 

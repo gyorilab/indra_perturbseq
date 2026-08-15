@@ -1,4 +1,5 @@
-"""INDRA statement selection and iteration on graph edges."""
+"""Select and iterate INDRA edge statements for path scoring.
+Prioritizes high-confidence beliefs and optional increase/decrease filtering."""
 
 from __future__ import annotations
 

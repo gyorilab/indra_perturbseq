@@ -1,9 +1,5 @@
 """Clean 2-hop pathway data.
-
-1. Remove rows whose intermediate is a non-human entity (MeSH, UniProt,
-   ChEBI, GO identifiers).
-2. Deduplicate (source, intermediate, target) triplets, keeping the row
-   with the highest mean evidence count.
+1. Remove rows whose intermediate is a non-human entity (MeSH, UniProt,.
 """
 
 from __future__ import annotations

@@ -1,4 +1,5 @@
-"""DEG (differentially expressed gene) file helpers."""
+"""Utilities for loading per-source DEG CSV files.
+Provides column selection, path helpers, and significant target extraction."""
 
 from __future__ import annotations
 

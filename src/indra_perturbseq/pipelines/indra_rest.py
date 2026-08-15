@@ -1,11 +1,5 @@
 """Direct pathway analysis via INDRA REST API.
-
-For each source perturbation gene, identifies significantly affected
-downstream genes from scRNA-seq DEG results, then queries the INDRA
-REST API (``indra_db_rest``) for direct literature-backed relationships
-(IncreaseAmount, DecreaseAmount).  Results
-include a consistency check between literature predictions and
-experimental knockdown observations.
+For each source perturbation gene, identifies significantly affected.
 """
 
 from __future__ import annotations
@@ -17,12 +11,16 @@ import time
 
 import pandas as pd
 import scanpy as sc
-from tenacity import retry, stop_after_attempt, wait_exponential
-
-from indra.sources import indra_db_rest
 from indra.statements import Activation, DecreaseAmount, IncreaseAmount, Inhibition
+from indra_perturbseq.gene_lists import load_source_genes
+from indra_perturbseq.runtime import add_log_level_arg, configure_logging
+from indra_perturbseq.services.indra_db import safe_get_statements
 
 logger = logging.getLogger(__name__)
+
+
+def _ensure_parent_dir(path: str) -> None:
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
 
 
 # ------------------------------------------------------------------
@@ -42,15 +40,6 @@ def _clean_gene_name(name: str | float | None) -> str | None:
 def _is_unusual_gene_name(name: str) -> bool:
     """Return ``True`` for Ensembl IDs, TSS suffixes, or non-uppercase names."""
     return name != name.upper() or "-TSS" in name or name.startswith("ENSG")
-
-
-# ------------------------------------------------------------------
-# INDRA REST query with retry
-# ------------------------------------------------------------------
-
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=5))
-def _safe_get_statements(**kwargs):
-    return indra_db_rest.get_statements(**kwargs)
 
 
 _STMT_TYPE_MAP = {
@@ -170,11 +159,9 @@ def query_direct_pathways(
     if _is_unusual_gene_name(target):
         return []
 
-    try:
-        ip = _safe_get_statements(subject=source, object=target, ev_limit=evidence_limit)
-        time.sleep(rate_limit)
-    except Exception as exc:
-        logger.warning("INDRA query failed %s -> %s: %s", source, target, exc)
+    ip = safe_get_statements(subject=source, object=target, ev_limit=evidence_limit)
+    time.sleep(rate_limit)
+    if ip is None:
         return []
 
     pathways: list[dict] = []
@@ -288,10 +275,10 @@ def run_all_perturbations(
         if not df.empty:
             frames.append(df)
 
-    if frames:
-        return pd.concat(frames, ignore_index=True)
-    logger.warning("No pathways discovered for any perturbation")
-    return pd.DataFrame()
+    if not frames:
+        logger.warning("No pathways discovered for any perturbation")
+        return pd.DataFrame()
+    return pd.concat(frames, ignore_index=True)
 
 
 def _prepare_adata(
@@ -354,6 +341,7 @@ def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(
         description="Direct pathway analysis via INDRA REST API.",
     )
+    add_log_level_arg(ap, default="INFO")
     group = ap.add_mutually_exclusive_group(required=True)
     group.add_argument("--adata", help="Path to .h5ad with raw counts")
     group.add_argument("--adata-de",
@@ -375,6 +363,7 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--evidence-limit", type=int, default=10)
     ap.add_argument("--rate-limit", type=float, default=1.0)
     args = ap.parse_args(argv)
+    configure_logging(args.log_level)
 
     genes = load_source_genes(
         args.source_genes_csv,
@@ -401,7 +390,7 @@ def main(argv: list[str] | None = None) -> None:
     if results.empty:
         logger.warning("No pathways discovered. Output will be empty.")
 
-    os.makedirs(os.path.dirname(args.output) or ".", exist_ok=True)
+    _ensure_parent_dir(args.output)
     results.to_csv(args.output, index=False)
     logger.info("Results: %d rows -> %s", len(results), args.output)
 

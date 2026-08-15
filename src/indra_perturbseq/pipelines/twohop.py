@@ -1,28 +1,26 @@
 """2-hop pathway extraction from an INDRA network export graph.
-
-Pipeline:
-1. Load graph and endothelial intermediate whitelist.
-2. For each source gene, find 2-hop paths: source -> intermediate -> target.
-3. Enrich with evidence text and PMIDs from db.indra.bio.
-4. Annotate MeSH terms via INDRA CoGEx.
-5. Split into non-self and self path CSVs.
+Pipeline:.
 """
 
 from __future__ import annotations
 
 import argparse
 import logging
-import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pandas as pd
 
-from indra_perturbseq.deg import load_deg_targets, pick_sig_column
+from indra_perturbseq.deg import load_deg_targets
 from indra_perturbseq.evidence import enrich_evidence_2hop
-from indra_perturbseq.gene_lists import load_gene_set, load_source_genes
+from indra_perturbseq.gene_lists import load_gene_set
 from indra_perturbseq.graph import is_hgnc_node, load_graph
 from indra_perturbseq.hgnc import normalize_hgnc_symbol
 from indra_perturbseq.mesh import annotate_mesh
+from indra_perturbseq.pipelines.common import (
+    load_sources_from_args,
+    warn_deprecated_flags,
+    write_split_outputs,
+)
 from indra_perturbseq.statements import best_statement, indra_html_url
 
 logger = logging.getLogger(__name__)
@@ -89,19 +87,34 @@ def run_2hop_for_gene(
 
 
 def main(argv: list[str] | None = None) -> None:
+    warn_deprecated_flags(
+        argv,
+        {
+            "--genes-csv": "--source-genes-csv",
+            "--out-csv-main": "--output-main",
+            "--out-csv-self": "--output-self-targets",
+            "--out-csv-self-targets": "--output-self-targets",
+        },
+        logger,
+    )
     ap = argparse.ArgumentParser(
         description="2-hop pipeline using INDRA network export.",
     )
     ap.add_argument("--graph-pkl", required=True)
-    ap.add_argument("--source-genes-csv", required=True,
+    ap.add_argument("--source-genes-csv", "--genes-csv", required=True,
                     help="target_validation_expanded.csv")
     ap.add_argument("--deg-dir", required=True)
     ap.add_argument("--endothelial-list", required=True,
                     help="CSV with 'gene' column for allowed intermediates")
     ap.add_argument("--mesh-reference", required=True,
                     help="MeSH reference CSV for term filtering")
-    ap.add_argument("--output-main", required=True)
-    ap.add_argument("--output-self-targets", required=True)
+    ap.add_argument("--output-main", "--out-csv-main", required=True)
+    ap.add_argument(
+        "--output-self-targets",
+        "--out-csv-self",
+        "--out-csv-self-targets",
+        required=True,
+    )
 
     ap.add_argument("--filter-column", default="analysis_flag")
     ap.add_argument("--filter-value", default="Use_for_analysis")
@@ -120,14 +133,7 @@ def main(argv: list[str] | None = None) -> None:
     graph, _ = load_graph(args.graph_pkl)
     allowed = load_gene_set(args.endothelial_list)
 
-    genes = load_source_genes(
-        args.source_genes_csv,
-        gene_column=args.gene_column,
-        filter_column=args.filter_column,
-        filter_value=args.filter_value,
-        explicit_genes=args.genes,
-        limit=args.limit_genes,
-    )
+    genes = load_sources_from_args(args)
 
     all_rows: list[dict] = []
     logger.info("Running 2-hop extraction (parallel over genes)...")
@@ -156,16 +162,7 @@ def main(argv: list[str] | None = None) -> None:
     logger.info("Annotating MeSH terms...")
     df = annotate_mesh(df, args.mesh_reference, mesh_batch_size=args.mesh_batch_size)
 
-    main_df = df[df["source"] != df["target"]].copy()
-    self_df = df[df["source"] == df["target"]].copy()
-
-    os.makedirs(os.path.dirname(args.output_main) or ".", exist_ok=True)
-    os.makedirs(os.path.dirname(args.output_self_targets) or ".", exist_ok=True)
-    main_df.to_csv(args.output_main, index=False)
-    self_df.to_csv(args.output_self_targets, index=False)
-
-    logger.info("Non-self rows: %d -> %s", len(main_df), args.output_main)
-    logger.info("Self rows:     %d -> %s", len(self_df), args.output_self_targets)
+    write_split_outputs(df, args.output_main, args.output_self_targets, logger)
 
 
 if __name__ == "__main__":

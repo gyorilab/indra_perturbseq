@@ -1,15 +1,5 @@
 """Compare original vs permuted INDRA path data.
-
-Consolidated module that provides two analyses:
-
-1. **Pair-overlap analysis** (from ``compare_original_vs_permuted.py``):
-   Removes self-loops from real and permuted 1/2-hop path files, counts
-   unique source-target pairs, and reports coverage rates.
-
-2. **Source-shuffle comparison** (from ``comapare_with_permuted_data.py``):
-   Permutes source labels in an original paths CSV, removes accidental
-   true matches, computes sign-alignment and evidence statistics, and
-   compares original vs permuted distributions.
+Consolidated module that provides two analyses:.
 """
 
 from __future__ import annotations

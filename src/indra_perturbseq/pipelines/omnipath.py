@@ -1,15 +1,5 @@
 """OmniPath 1-hop coverage and synthetic 3-hop dataset creation.
-
-Sub-commands
-------------
-``1hop``
-    Build the OmniPath interaction graph (UniProt -> HGNC), then compute
-    1-hop coverage for each perturbation gene against its significant
-    DEG targets.
-
-``synthetic-3hop``
-    Create a synthetic OmniPath-style 3-hop dataset from an existing
-    INDRA 3-hop CSV by varying intermediate-gene overlap ratios.
+Sub-commands.
 """
 
 from __future__ import annotations
@@ -24,14 +14,16 @@ import numpy as np
 import pandas as pd
 
 from indra_perturbseq.gene_lists import load_source_genes
+from indra_perturbseq.runtime import add_log_level_arg, configure_logging
 
 logger = logging.getLogger(__name__)
 
 
-# ------------------------------------------------------------------
-# 1-hop OmniPath coverage
-# ------------------------------------------------------------------
+def _ensure_parent_dir(path: str) -> None:
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
 
+
+# 1-hop OmniPath coverage
 def _build_uniprot_to_hgnc(uniprot_ids: set[str]) -> dict[str, str]:
     """Map UniProt accessions to HGNC symbols using INDRA clients."""
     from indra.databases import hgnc_client, uniprot_client
@@ -81,7 +73,7 @@ def fetch_omnipath_graph(
         df = df.dropna(subset=["source", "target"])
 
         if cache_path:
-            os.makedirs(os.path.dirname(cache_path) or ".", exist_ok=True)
+            _ensure_parent_dir(cache_path)
             df.to_parquet(cache_path)
             logger.info("Cached mapped OmniPath data: %s", cache_path)
 
@@ -192,9 +184,7 @@ def run_1hop_omnipath(
     return pd.DataFrame(results)
 
 
-# ------------------------------------------------------------------
 # Synthetic 3-hop dataset creation
-# ------------------------------------------------------------------
 
 def create_synthetic_3hop(
     indra_csv: str,
@@ -303,7 +293,7 @@ def create_synthetic_3hop(
             })
 
     out_df = pd.DataFrame(op_rows)
-    os.makedirs(os.path.dirname(output_csv) or ".", exist_ok=True)
+    _ensure_parent_dir(output_csv)
     out_df.to_csv(output_csv, index=False)
 
     logger.info(
@@ -322,14 +312,10 @@ def _add_1hop_parser(subparsers) -> None:
     sp = subparsers.add_parser(
         "1hop", help="OmniPath 1-hop coverage analysis",
     )
-    sp.add_argument("--source-genes-csv", required=True,
-                    help="target_validation_expanded.csv")
-    sp.add_argument("--deg-dir", required=True,
-                    help="Folder with <GENE>_vs_control.csv files")
-    sp.add_argument("--output", required=True,
-                    help="Output CSV for coverage results")
-    sp.add_argument("--cache-parquet", default=None,
-                    help="Cache file for mapped OmniPath edges")
+    sp.add_argument("--source-genes-csv", required=True, help="target_validation_expanded.csv")
+    sp.add_argument("--deg-dir", required=True, help="Folder with <GENE>_vs_control.csv files")
+    sp.add_argument("--output", required=True, help="Output CSV for coverage results")
+    sp.add_argument("--cache-parquet", default=None, help="Cache file for mapped OmniPath edges")
     sp.add_argument("--force-reload", action="store_true")
     sp.add_argument("--p-threshold", type=float, default=0.05)
     sp.add_argument("--filter-column", default="analysis_flag")
@@ -358,46 +344,51 @@ def _add_synth_parser(subparsers) -> None:
     sp.add_argument("--seed", type=int, default=42)
 
 
+def _run_1hop_command(args: argparse.Namespace) -> None:
+    genes = load_source_genes(
+        args.source_genes_csv,
+        gene_column=args.gene_column,
+        filter_column=args.filter_column,
+        filter_value=args.filter_value,
+        explicit_genes=args.genes,
+        limit=args.limit_genes,
+    )
+    df = run_1hop_omnipath(
+        genes, args.deg_dir,
+        cache_path=args.cache_parquet,
+        force_reload=args.force_reload,
+        pval_threshold=args.p_threshold,
+    )
+    _ensure_parent_dir(args.output)
+    df.to_csv(args.output, index=False)
+    logger.info("Results: %d rows -> %s", len(df), args.output)
+
+
+def _run_synth_command(args: argparse.Namespace) -> None:
+    create_synthetic_3hop(
+        args.indra_csv, args.output,
+        coverage_fraction=args.coverage,
+        top_n_pairs=args.top_n_pairs,
+        n_selected_pairs=args.n_selected_pairs,
+        ratio_identical=args.ratio_identical,
+        ratio_partial=args.ratio_partial,
+        intermediate_pool_fraction=args.intermediate_pool_fraction,
+        seed=args.seed,
+    )
+
+
 def main(argv: list[str] | None = None) -> None:
     """CLI entry point for OmniPath pipelines."""
     ap = argparse.ArgumentParser(
         description="OmniPath 1-hop coverage and synthetic dataset creation.",
     )
+    add_log_level_arg(ap, default="INFO")
     subparsers = ap.add_subparsers(dest="command", required=True)
     _add_1hop_parser(subparsers)
     _add_synth_parser(subparsers)
     args = ap.parse_args(argv)
-
-    if args.command == "1hop":
-        genes = load_source_genes(
-            args.source_genes_csv,
-            gene_column=args.gene_column,
-            filter_column=args.filter_column,
-            filter_value=args.filter_value,
-            explicit_genes=args.genes,
-            limit=args.limit_genes,
-        )
-        df = run_1hop_omnipath(
-            genes, args.deg_dir,
-            cache_path=args.cache_parquet,
-            force_reload=args.force_reload,
-            pval_threshold=args.p_threshold,
-        )
-        os.makedirs(os.path.dirname(args.output) or ".", exist_ok=True)
-        df.to_csv(args.output, index=False)
-        logger.info("Results: %d rows -> %s", len(df), args.output)
-
-    elif args.command == "synthetic-3hop":
-        create_synthetic_3hop(
-            args.indra_csv, args.output,
-            coverage_fraction=args.coverage,
-            top_n_pairs=args.top_n_pairs,
-            n_selected_pairs=args.n_selected_pairs,
-            ratio_identical=args.ratio_identical,
-            ratio_partial=args.ratio_partial,
-            intermediate_pool_fraction=args.intermediate_pool_fraction,
-            seed=args.seed,
-        )
+    configure_logging(args.log_level)
+    {"1hop": _run_1hop_command, "synthetic-3hop": _run_synth_command}[args.command](args)
 
 
 if __name__ == "__main__":

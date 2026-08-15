@@ -1,14 +1,5 @@
 """Annotate pathway CSVs with MeSH terms and filter by reference list.
-
-Provides two subcommands:
-
-``annotate``
-    Fetch MeSH IDs for PMIDs in a pathway CSV and insert annotation columns
-    (supports 1-hop, 2-hop, and 3-hop layouts).
-
-``filter``
-    Retain only MeSH terms present in a reference list within existing
-    annotation columns.
+This module provides preprocessing utilities and command-line data preparation workflows.
 """
 from __future__ import annotations
 
@@ -25,9 +16,6 @@ logger = logging.getLogger(__name__)
 _MESH_ID_RE = re.compile(r"D\d{5,10}")
 
 
-# ---------------------------------------------------------------------------
-# Shared helpers
-# ---------------------------------------------------------------------------
 def _parse_pmids_cell(value: object) -> list[str]:
     """Parse semicolon-separated PMIDs from a single cell value."""
     if value is None:
@@ -50,22 +38,8 @@ def _is_valid_mesh_id(mid: str) -> bool:
     return bool(re.fullmatch(r"[DC]\d{6,7}", mid))
 
 
-# ---------------------------------------------------------------------------
-# Reference-list helpers
-# ---------------------------------------------------------------------------
 def load_valid_mesh_ids(reference_csv: str) -> set[str]:
-    """Load a reference CSV and return the set of valid MeSH descriptor IDs.
-
-    Parameters
-    ----------
-    reference_csv
-        Path to a CSV with at least a ``mesh_id`` column.
-
-    Returns
-    -------
-    set[str]
-        Upper-cased descriptor IDs starting with ``D``.
-    """
+    """Load reference CSV and return valid descriptor IDs."""
     ref = pd.read_csv(
         reference_csv, encoding="utf-8-sig", on_bad_lines="skip", low_memory=False,
     )
@@ -83,9 +57,6 @@ def load_valid_mesh_ids(reference_csv: str) -> set[str]:
     return set(cleaned[cleaned.str.startswith("D", na=False)].tolist())
 
 
-# ---------------------------------------------------------------------------
-# Annotate subcommand
-# ---------------------------------------------------------------------------
 def _collect_all_pmids(df: pd.DataFrame, columns: list[str]) -> list[str]:
     pmids: set[str] = set()
     for col in columns:
@@ -166,10 +137,7 @@ def _resolve_hop_spec(
     mode: str,
     df: pd.DataFrame,
 ) -> list[tuple[str, str]]:
-    """Return ``[(pmid_col, annotation_col), ...]`` for the given mode.
-
-    For ``3hop`` the PMID columns are detected dynamically.
-    """
+    """Return ``[(pmid_col, annotation_col), ...]`` for the selected mode."""
     if mode == "1hop":
         return [("pmids", "Annotated MeSH terms")]
     if mode == "2hop":
@@ -194,26 +162,7 @@ def annotate(
     *,
     client: Neo4jClient | None = None,
 ) -> pd.DataFrame:
-    """Annotate a pathway DataFrame with MeSH terms from PMIDs.
-
-    Parameters
-    ----------
-    df
-        Input pathway DataFrame.
-    mode
-        One of ``"1hop"``, ``"2hop"``, ``"3hop"``.
-    reference_csv
-        Optional path to a MeSH reference CSV for filtering.
-    batch_size
-        PMID batch size for Neo4j queries.
-    client
-        Neo4j client; one is created if not supplied.
-
-    Returns
-    -------
-    pd.DataFrame
-        Copy of *df* with annotation columns added/overwritten.
-    """
+    """Annotate a pathway DataFrame with MeSH terms from PMIDs."""
     if client is None:
         client = Neo4jClient()
 
@@ -251,31 +200,12 @@ def annotate(
     return df
 
 
-# ---------------------------------------------------------------------------
-# Filter subcommand
-# ---------------------------------------------------------------------------
 def filter_mesh_columns(
     df: pd.DataFrame,
     reference_csv: str,
     mesh_columns: list[str] | None = None,
 ) -> pd.DataFrame:
-    """Filter existing MeSH annotation columns against a reference list.
-
-    Parameters
-    ----------
-    df
-        Input DataFrame with MeSH annotation columns.
-    reference_csv
-        Path to reference CSV with ``mesh_id`` column.
-    mesh_columns
-        Columns to filter.  Auto-detected if ``None``.
-
-    Returns
-    -------
-    pd.DataFrame
-        Copy of *df* with filtered annotation columns and any
-        duplicate/artifact columns removed.
-    """
+    """Filter existing MeSH annotation columns against a reference list."""
     valid_ids = load_valid_mesh_ids(reference_csv)
     logger.info("Loaded %d valid MeSH IDs from reference", len(valid_ids))
 
@@ -314,9 +244,6 @@ def _filter_cell(text: object, valid_ids: set[str]) -> str:
     return ", ".join(kept)
 
 
-# ---------------------------------------------------------------------------
-# CLI
-# ---------------------------------------------------------------------------
 def main(argv: list[str] | None = None) -> None:
     """CLI entry point with ``annotate`` and ``filter`` subcommands."""
     parser = argparse.ArgumentParser(

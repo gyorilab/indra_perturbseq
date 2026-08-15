@@ -1,4 +1,6 @@
-"""Fold-change vs p-value landscape scatter plots across hop distances."""
+"""Fold-change vs p-value landscape scatter plots across hop distances.
+This module provides plotting utilities and CLI entry points for analysis outputs.
+"""
 
 from __future__ import annotations
 
