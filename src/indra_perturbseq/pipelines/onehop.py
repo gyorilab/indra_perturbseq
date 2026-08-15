@@ -12,16 +12,20 @@ import pandas as pd
 
 from indra_perturbseq.deg import load_deg_targets
 from indra_perturbseq.evidence import (
-    enrich_evidence_1hop,
     rich_stmt_text_from_hash,
 )
 from indra_perturbseq.graph import is_hgnc_node, load_graph
 from indra_perturbseq.hgnc import normalize_hgnc_symbol
-from indra_perturbseq.mesh import annotate_mesh
 from indra_perturbseq.pipelines.common import (
     load_sources_from_args,
     warn_deprecated_flags,
     write_split_outputs,
+)
+from indra_perturbseq.pipelines.enrichment import (
+    add_enrichment_cli_args,
+    annotate_mesh_terms,
+    enrich_evidence,
+    validate_enrichment_args,
 )
 from indra_perturbseq.statements import indra_html_url, iter_incdec_statements
 
@@ -144,8 +148,6 @@ def main(argv: list[str] | None = None) -> None:
                     help="target_validation_expanded.csv")
     ap.add_argument("--deg-dir", required=True,
                     help="Folder with <GENE>_vs_control.csv files")
-    ap.add_argument("--mesh-reference", default=None,
-                    help="MeSH reference CSV for term filtering")
     ap.add_argument("--output-main", "--out-csv-main", required=True,
                     help="Output CSV for non-self paths")
     ap.add_argument(
@@ -160,8 +162,9 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--gene-column", default="Gene")
     ap.add_argument("--p-threshold", type=float, default=0.05)
     ap.add_argument("--prefer-fdr", action="store_true")
-    ap.add_argument("--mesh-batch-size", type=int, default=200)
+    add_enrichment_cli_args(ap)
     args = ap.parse_args(argv)
+    validate_enrichment_args(args, ap)
 
     graph, _ = load_graph(args.graph_pkl)
 
@@ -169,17 +172,8 @@ def main(argv: list[str] | None = None) -> None:
 
     df = run_1hop(graph, genes, args.deg_dir, args.p_threshold, args.prefer_fdr)
     df = _fill_english_statements(df)
-    df = enrich_evidence_1hop(df)
-    if args.mesh_reference:
-        logger.info("Annotating MeSH terms...")
-        df = annotate_mesh(
-            df,
-            args.mesh_reference,
-            pmid_columns=["pmids_hop1"],
-            mesh_batch_size=args.mesh_batch_size,
-        )
-    else:
-        logger.warning("No --mesh-reference provided; skipping MeSH annotation.")
+    df = enrich_evidence(df, args, hop_hash_columns={1: "stmt_hash"})
+    df = annotate_mesh_terms(df, args, pmid_columns=["pmids_hop1"])
     df = _reorder_columns(df)
     write_split_outputs(df, args.output_main, args.output_self_targets, logger)
 
