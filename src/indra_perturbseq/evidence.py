@@ -4,6 +4,7 @@ This module provides shared utilities used across the INDRA Perturb-seq codebase
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from collections import OrderedDict
@@ -43,7 +44,14 @@ def rich_stmt_text_from_hash(stmt_hash: int, cache: dict) -> str:
             except Exception:
                 payload = None
         if isinstance(payload, dict):
-            txt = payload.get("english", "") or ""
+            try:
+                from indra.assemblers.english import EnglishAssembler
+                from indra.statements.io import stmt_from_json
+
+                stmt = stmt_from_json(payload)
+                txt = EnglishAssembler([stmt]).make_model() or ""
+            except Exception:
+                txt = ""
     except Exception:
         txt = ""
     cache[stmt_hash] = txt
@@ -145,12 +153,16 @@ def _parse_evidence_node(ev_obj) -> tuple[str | None, str | None, str | None]:
         return None, None, None
     if isinstance(ev_obj, str):
         return ev_obj.strip(), None, None
-    if not isinstance(ev_obj, dict):
+    if not hasattr(ev_obj, "get"):
         return None, None, None
 
-    d = ev_obj.get("evidence", ev_obj) if isinstance(
-        ev_obj.get("evidence"), dict
-    ) else ev_obj
+    raw_evidence = ev_obj.get("evidence")
+    if isinstance(raw_evidence, str):
+        try:
+            raw_evidence = json.loads(raw_evidence)
+        except Exception:
+            raw_evidence = None
+    d = raw_evidence if isinstance(raw_evidence, dict) else ev_obj
     txt = d.get("text") or ev_obj.get("text")
     pmid = d.get("pmid") or ev_obj.get("pmid")
     source_api = d.get("source_api") or ev_obj.get("source_api")
@@ -188,7 +200,7 @@ def fetch_evidence_from_neo4j(
         recs = safe_query_tx(
             client,
             query,
-            parameters={"hashes": [int(x) for x in batch]},
+            hashes=[int(x) for x in batch],
         )
         for r in recs:
             if isinstance(r, dict):
@@ -226,13 +238,72 @@ def fetch_evidence_from_neo4j(
                 "pmids": pmids,
                 "sources": list(sources.keys()),
             }
+    unresolved = [
+        h for h, d in out.items()
+        if (d.get("evidence_text") or "") == "No evidence found (Neo4j)"
+    ]
+    if unresolved and batch_size > 1:
+        retry_batch_size = max(1, min(100, batch_size // 10 or 1))
+        logger.info(
+            "Retrying %d unresolved stmt_hashes from Neo4j with smaller batch size=%d",
+            len(unresolved),
+            retry_batch_size,
+        )
+        retry_out = fetch_evidence_from_neo4j(unresolved, batch_size=retry_batch_size)
+        for h, d in retry_out.items():
+            if (d.get("evidence_text") or "") != "No evidence found (Neo4j)":
+                out[h] = d
     return out
+
+
+def _coerce_stmt_hash(raw_hash: object) -> int | None:
+    """Safely coerce a literal stmt_hash value from a dataframe cell."""
+    if isinstance(raw_hash, (int, np.integer)):
+        return int(raw_hash)
+    if isinstance(raw_hash, str):
+        s = raw_hash.strip()
+        if s:
+            try:
+                return int(s)
+            except Exception:
+                pass
+    if isinstance(raw_hash, float) and np.isfinite(raw_hash):
+        as_int = int(raw_hash)
+        if float(as_int) == raw_hash:
+            return as_int
+    return None
+
+
+def _normalize_stmt_hash_literal(raw_hash: object) -> str:
+    """Return a CSV-safe stmt_hash literal without scientific notation.
+
+    This preserves exact numeric statement hashes as digit strings and leaves
+    non-numeric graph metadata (for example identifiers.org URLs) untouched.
+    """
+    if raw_hash is None or pd.isna(raw_hash):
+        return ""
+    if isinstance(raw_hash, (int, np.integer)):
+        return str(int(raw_hash))
+    if isinstance(raw_hash, str):
+        s = raw_hash.strip()
+        if not s:
+            return ""
+        try:
+            return str(int(s))
+        except Exception:
+            return s
+    if isinstance(raw_hash, float) and np.isfinite(raw_hash):
+        as_int = int(raw_hash)
+        if float(as_int) == raw_hash:
+            return str(as_int)
+    return str(raw_hash)
 
 
 def enrich_evidence(
     df: pd.DataFrame,
     hop_hash_columns: dict[int, str] | None = None,
     neo4j_batch_size: int = 2000,
+    db_indra_fallback: bool = True,
 ) -> pd.DataFrame:
     """Add evidence text and PMIDs columns from Neo4j Evidence nodes.
 
@@ -245,6 +316,9 @@ def enrich_evidence(
         When omitted, uses ``hopN_hash`` columns discovered on *df*.
     neo4j_batch_size :
         Batch size for Neo4j statement-hash queries.
+    db_indra_fallback :
+        If ``True``, fill numeric stmt_hash misses from ``db.indra.bio`` only
+        after Neo4j returns no evidence for them.
     """
     df = df.copy()
     if hop_hash_columns is None:
@@ -256,6 +330,12 @@ def enrich_evidence(
     if not hop_hash_columns:
         return df
 
+    # Preserve stmt_hash literals as strings so future CSV writes don't coerce
+    # large hashes into float/scientific notation.
+    for hash_col in hop_hash_columns.values():
+        if hash_col in df.columns:
+            df[hash_col] = df[hash_col].map(_normalize_stmt_hash_literal)
+
     for hop in sorted(hop_hash_columns):
         ev_col = f"evidence_text_hop{hop}"
         pm_col = f"pmids_hop{hop}"
@@ -264,32 +344,51 @@ def enrich_evidence(
         if pm_col not in df.columns:
             df[pm_col] = ""
 
+    resolved_hashes: dict[tuple[object, int], int] = {}
     hashes: set[int] = set()
-    for hash_col in hop_hash_columns.values():
-        if hash_col not in df.columns:
-            continue
-        vals = pd.to_numeric(df[hash_col], errors="coerce").dropna().astype(np.int64)
-        hashes.update(int(v) for v in vals)
+    for idx in df.index:
+        for hop, hash_col in hop_hash_columns.items():
+            if hash_col not in df.columns:
+                continue
+            resolved = _coerce_stmt_hash(df.at[idx, hash_col])
+            if resolved is not None:
+                resolved_hashes[(idx, hop)] = resolved
+                hashes.add(resolved)
 
     logger.info("Evidence fetch (Neo4j): %d unique stmt_hashes", len(hashes))
     if not hashes:
         return df
 
     ev_map = fetch_evidence_from_neo4j(sorted(hashes), batch_size=neo4j_batch_size)
+    if db_indra_fallback:
+        unresolved_hashes = sorted(
+            h for h, d in ev_map.items()
+            if (d.get("evidence_text") or "") == "No evidence found (Neo4j)"
+        )
+        if unresolved_hashes:
+            logger.info(
+                "Falling back to db.indra.bio for %d unresolved stmt_hashes",
+                len(unresolved_hashes),
+            )
+            for h in unresolved_hashes:
+                ev_text, pmids, _sources = evidence_from_hash(h)
+                if ev_text != "No evidence returned (db.indra.bio)":
+                    ev_map[h] = {
+                        "evidence_text": ev_text,
+                        "pmids": pmids,
+                        "sources": [],
+                    }
 
     for idx in df.index:
         for hop, hash_col in hop_hash_columns.items():
-            h = df.at[idx, hash_col] if hash_col in df.columns else None
             ev_col = f"evidence_text_hop{hop}"
             pm_col = f"pmids_hop{hop}"
-            if not isinstance(h, (int, np.integer)):
-                try:
-                    h = int(h)
-                except Exception:
-                    df.at[idx, ev_col] = "No evidence found (Neo4j)"
-                    df.at[idx, pm_col] = ""
-                    continue
-            d = ev_map.get(int(h))
+            h = resolved_hashes.get((idx, hop))
+            if h is None:
+                df.at[idx, ev_col] = "No evidence found (Neo4j)"
+                df.at[idx, pm_col] = ""
+                continue
+            d = ev_map.get(h)
             if d:
                 df.at[idx, ev_col] = format_evidence_text(d["evidence_text"])
                 df.at[idx, pm_col] = "; ".join(d["pmids"])
