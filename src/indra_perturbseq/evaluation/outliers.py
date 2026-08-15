@@ -17,7 +17,7 @@ import numpy as np
 import pandas as pd
 
 from indra_perturbseq.deg import build_pvalue_map, deg_path_for_source, pick_sig_column
-from indra_perturbseq.gene_lists import load_gene_set, load_karen_sources
+from indra_perturbseq.gene_lists import load_gene_set, load_filtered_sources
 from indra_perturbseq.graph import is_hgnc_node, load_graph
 from indra_perturbseq.hgnc import normalize_hgnc_symbol
 from indra_perturbseq.statements import best_statement, iter_incdec_statements
@@ -55,24 +55,24 @@ def recompute(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(
         description="TPR/FPR over thresholds with union of path CSVs.",
     )
-    ap.add_argument("--tv-path", required=True)
-    ap.add_argument("--tv-source-col", default="Gene")
-    ap.add_argument("--karen-flag-col", default="Karen_Flag")
-    ap.add_argument("--karen-flag-value", default="Use_for_analysis")
-    ap.add_argument("--de-dir", required=True)
+    ap.add_argument("--target-validation", required=True)
+    ap.add_argument("--source-column", default="Gene")
+    ap.add_argument("--filter-column", default="analysis_flag")
+    ap.add_argument("--filter-value", default="Use_for_analysis")
+    ap.add_argument("--deg-dir", required=True)
     ap.add_argument("--paths", nargs="+", required=True,
                     help="Path CSVs to union (TP / FP / outlier)")
     ap.add_argument("--path-source-col", default="source")
     ap.add_argument("--path-target-col", default="target")
     ap.add_argument("--thresholds", nargs="+", type=float,
                     default=DEFAULT_THRESHOLDS)
-    ap.add_argument("--out-csv", default="")
-    ap.add_argument("--print-table", action="store_true")
+    ap.add_argument("--output-csv", default="")
+    ap.add_argument("--show-table", action="store_true")
     args = ap.parse_args(argv)
 
-    sources = load_karen_sources(
-        args.tv_path, args.tv_source_col,
-        args.karen_flag_col, args.karen_flag_value,
+    sources = load_filtered_sources(
+        args.target_validation, args.source_column,
+        args.filter_column, args.filter_value,
     )
     pairs = _load_explained_pairs_union(
         args.paths, args.path_source_col, args.path_target_col,
@@ -85,7 +85,7 @@ def recompute(argv: list[str] | None = None) -> None:
 
     cache: dict[str, tuple[np.ndarray, dict]] = {}
     for src in sources:
-        f = deg_path_for_source(args.de_dir, src)
+        f = deg_path_for_source(args.deg_dir, src)
         if not os.path.exists(f):
             continue
         pmap = build_pvalue_map(f, src)
@@ -95,34 +95,47 @@ def recompute(argv: list[str] | None = None) -> None:
     rows = []
     for thr in args.thresholds:
         tp_all = fp_all = pos_all = neg_all = 0
+        tpr_list: list[float] = []
+        fpr_list: list[float] = []
         for src, (pvals, pmap) in cache.items():
-            pos_all += int(np.sum(pvals <= thr))
-            neg_all += int(np.sum(pvals > thr))
+            pos = int(np.sum(pvals <= thr))
+            neg = int(np.sum(pvals > thr))
+            pos_all += pos
+            neg_all += neg
+            tp = fp = 0
             for t in expl_by_src.get(src, set()):
                 p = pmap.get(t)
                 if p is None:
                     continue
                 if p <= thr:
-                    tp_all += 1
+                    tp += 1
                 else:
-                    fp_all += 1
+                    fp += 1
+            tp_all += tp
+            fp_all += fp
+            tpr_list.append(tp / pos if pos else np.nan)
+            fpr_list.append(fp / neg if neg else np.nan)
 
         tpr = tp_all / pos_all if pos_all else float("nan")
         fpr = fp_all / neg_all if neg_all else float("nan")
+        tpr_avg = float(np.nanmean(tpr_list)) if tpr_list else float("nan")
+        fpr_avg = float(np.nanmean(fpr_list)) if fpr_list else float("nan")
         rows.append({
             "threshold": float(thr),
             "TP_total": tp_all, "FP_total": fp_all,
             "positives_total": pos_all, "negatives_total": neg_all,
             "TPR_overall": tpr, "FPR_overall": fpr,
+            "TPR_per_source_avg": tpr_avg, "FPR_per_source_avg": fpr_avg,
         })
-        logger.info("thr %g | TPR=%.4f FPR=%.4f", thr, tpr, fpr)
+        logger.info("thr %g | TPR=%.4f FPR=%.4f | avg TPR=%.4f FPR=%.4f",
+                     thr, tpr, fpr, tpr_avg, fpr_avg)
 
     out = pd.DataFrame(rows)
-    if args.out_csv:
-        out.to_csv(args.out_csv, index=False)
-        logger.info("Wrote %s", args.out_csv)
-    if args.print_table:
-        print(out.to_string(index=False))
+    if args.output_csv:
+        out.to_csv(args.output_csv, index=False)
+        logger.info("Wrote %s", args.output_csv)
+    if args.show_table:
+        logger.info("\n%s", out.to_string(index=False))
 
 
 # ------------------------------------------------------------------
@@ -175,15 +188,15 @@ def run_outliers(argv: list[str] | None = None) -> None:
                     help="e.g. TP53 CDKN1A")
     ap.add_argument("--deg-csvs", nargs="+", required=True,
                     help="Corresponding <source>_vs_control.csv files")
-    ap.add_argument("--out-1hop-csv", required=True)
-    ap.add_argument("--out-2hop-csv", required=True)
+    ap.add_argument("--output-1hop", required=True)
+    ap.add_argument("--output-2hop", required=True)
     args = ap.parse_args(argv)
 
     if len(args.sources) != len(args.deg_csvs):
         raise SystemExit("--sources and --deg-csvs must have same length")
 
     graph, _ = load_graph(args.graph_pkl)
-    endo = load_gene_set(args.endothelial_list, gene_col=args.endothelial_gene_col)
+    endo = load_gene_set(args.endothelial_list, gene_column=args.endothelial_gene_col)
     endo = {g for g in endo if g in graph and is_hgnc_node(graph, g)}
     logger.info("Endothelial in-graph: %d", len(endo))
 
@@ -239,10 +252,10 @@ def run_outliers(argv: list[str] | None = None) -> None:
                     "pval": st.get("pval"),
                 })
 
-    pd.DataFrame(rows_1).to_csv(args.out_1hop_csv, index=False)
-    pd.DataFrame(rows_2).to_csv(args.out_2hop_csv, index=False)
-    logger.info("1-hop: %d -> %s", len(rows_1), args.out_1hop_csv)
-    logger.info("2-hop: %d -> %s", len(rows_2), args.out_2hop_csv)
+    pd.DataFrame(rows_1).to_csv(args.output_1hop, index=False)
+    pd.DataFrame(rows_2).to_csv(args.output_2hop, index=False)
+    logger.info("1-hop: %d -> %s", len(rows_1), args.output_1hop)
+    logger.info("2-hop: %d -> %s", len(rows_2), args.output_2hop)
 
 
 def main(argv: list[str] | None = None) -> None:

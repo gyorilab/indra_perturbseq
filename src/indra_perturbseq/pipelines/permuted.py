@@ -98,21 +98,21 @@ def main(argv: list[str] | None = None) -> None:
         description="Permuted-network 1/2-hop path CSVs for TPR comparison.",
     )
     ap.add_argument("--graph-pkl", required=True)
-    ap.add_argument("--genes-csv", required=True,
+    ap.add_argument("--source-genes-csv", required=True,
                     help="target_validation_expanded.csv")
-    ap.add_argument("--de-dir", required=True)
+    ap.add_argument("--deg-dir", required=True)
     ap.add_argument("--p-threshold", type=float, default=0.05)
     ap.add_argument("--prefer-fdr", action="store_true")
-    ap.add_argument("--karen-flag-col", default="Karen_Flag")
-    ap.add_argument("--karen-flag-value", default="Use_for_analysis")
-    ap.add_argument("--gene-col", default="Gene")
+    ap.add_argument("--filter-column", default="analysis_flag")
+    ap.add_argument("--filter-value", default="Use_for_analysis")
+    ap.add_argument("--gene-column", default="Gene")
     ap.add_argument("--seed", type=int, default=42,
                     help="Permutation seed for HGNC label shuffling")
     ap.add_argument("--mode", choices=["1hop", "2hop", "both"], default="both")
     ap.add_argument("--allowed-intermediates-csv", default="")
     ap.add_argument("--allowed-intermediates-gene-col", default="gene")
-    ap.add_argument("--out-1hop-csv", default="permuted_1hop_paths.csv")
-    ap.add_argument("--out-2hop-csv", default="permuted_2hop_paths.csv")
+    ap.add_argument("--output-1hop", default="permuted_1hop_paths.csv")
+    ap.add_argument("--output-2hop", default="permuted_2hop_paths.csv")
     ap.add_argument("--workers", type=int, default=4)
     args = ap.parse_args(argv)
 
@@ -127,14 +127,14 @@ def main(argv: list[str] | None = None) -> None:
     if args.allowed_intermediates_csv:
         allowed = load_gene_set(
             args.allowed_intermediates_csv,
-            gene_col=args.allowed_intermediates_gene_col,
+            gene_column=args.allowed_intermediates_gene_col,
         )
 
     sources_raw = load_source_genes(
-        args.genes_csv,
-        gene_col=args.gene_col,
-        flag_col=args.karen_flag_col,
-        flag_value=args.karen_flag_value,
+        args.source_genes_csv,
+        gene_column=args.gene_column,
+        filter_column=args.filter_column,
+        filter_value=args.filter_value,
     )
 
     jobs = []
@@ -143,7 +143,7 @@ def main(argv: list[str] | None = None) -> None:
         if not src or src not in graph or not is_hgnc_node(graph, src):
             continue
         targets, deg_map, err = load_deg_targets(
-            args.de_dir, raw_src, args.p_threshold, args.prefer_fdr,
+            args.deg_dir, raw_src, args.p_threshold, args.prefer_fdr,
         )
         if err:
             continue
@@ -178,15 +178,15 @@ def main(argv: list[str] | None = None) -> None:
         df1 = pd.DataFrame(onehop_rows)
         if not df1.empty:
             df1 = df1[df1["source"] != df1["target"]].copy()
-        df1.to_csv(args.out_1hop_csv, index=False)
-        logger.info("Wrote %d permuted 1-hop rows -> %s", len(df1), args.out_1hop_csv)
+        df1.to_csv(args.output_1hop, index=False)
+        logger.info("Wrote %d permuted 1-hop rows -> %s", len(df1), args.output_1hop)
 
     if args.mode in ("2hop", "both"):
         df2 = pd.DataFrame(twohop_rows)
         if not df2.empty:
             df2 = df2[df2["source"] != df2["target"]].copy()
-        df2.to_csv(args.out_2hop_csv, index=False)
-        logger.info("Wrote %d permuted 2-hop rows -> %s", len(df2), args.out_2hop_csv)
+        df2.to_csv(args.output_2hop, index=False)
+        logger.info("Wrote %d permuted 2-hop rows -> %s", len(df2), args.output_2hop)
 
 
 if __name__ == "__main__":

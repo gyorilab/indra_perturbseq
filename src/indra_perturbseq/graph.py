@@ -12,6 +12,8 @@ logger = logging.getLogger(__name__)
 
 def _install_numpy_dtype_shims() -> None:
     """Register missing numpy dtype aliases needed by older pickled graphs."""
+    if not hasattr(np, "sctypeDict"):
+        return
     if "f16" not in np.sctypeDict:
         replacement = (
             np.longdouble

@@ -43,13 +43,13 @@ def pick_sig_column(df: pd.DataFrame, prefer_fdr: bool = False) -> str:
     )
 
 
-def deg_path_for_source(de_dir: str, source: str) -> str:
+def deg_path_for_source(deg_dir: str, source: str) -> str:
     """Return the expected DEG CSV path for a source gene."""
-    return os.path.join(de_dir, f"{source}_vs_control.csv")
+    return os.path.join(deg_dir, f"{source}_vs_control.csv")
 
 
 def load_deg_targets(
-    de_dir: str,
+    deg_dir: str,
     raw_gene: str,
     p_threshold: float,
     prefer_fdr: bool = False,
@@ -66,7 +66,7 @@ def load_deg_targets(
     error :
         ``None`` on success, otherwise a short error message.
     """
-    path = deg_path_for_source(de_dir, raw_gene)
+    path = deg_path_for_source(deg_dir, raw_gene)
     if not os.path.exists(path):
         return [], {}, f"missing DEG file: {path}"
 
@@ -104,7 +104,7 @@ def load_deg_targets(
 
 
 def load_deg_universe(
-    de_dir: str,
+    deg_dir: str,
     raw_gene: str,
     p_threshold: float,
     prefer_fdr: bool = False,
@@ -113,7 +113,7 @@ def load_deg_universe(
 
     Returns ``(all_targets, pos_targets, stats_map, error)``.
     """
-    path = deg_path_for_source(de_dir, raw_gene)
+    path = deg_path_for_source(deg_dir, raw_gene)
     if not os.path.exists(path):
         return None, None, None, f"missing DEG file: {path}"
 

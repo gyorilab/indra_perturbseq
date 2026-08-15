@@ -215,24 +215,24 @@ def main(argv: list[str] | None = None) -> None:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     ap.add_argument("--graph-pkl", required=True)
-    ap.add_argument("--endo-list", required=True,
+    ap.add_argument("--endothelial-list", required=True,
                     help="Gene whitelist CSV")
     ap.add_argument("--deg-dir", required=True,
                     help="Folder with <GENE>_vs_control.csv")
-    ap.add_argument("--out-dir", required=True)
+    ap.add_argument("--output-dir", required=True)
     ap.add_argument("--genes", nargs="+")
-    ap.add_argument("--genes-csv", default=None)
-    ap.add_argument("--gene-col", default="Gene")
-    ap.add_argument("--flag-col", default=None)
-    ap.add_argument("--flag-val", default=None)
-    ap.add_argument("--endo-col", default="gene")
+    ap.add_argument("--source-genes-csv", default=None)
+    ap.add_argument("--gene-column", default="Gene")
+    ap.add_argument("--filter-column", default=None)
+    ap.add_argument("--filter-value", default=None)
+    ap.add_argument("--endothelial-column", default="gene")
     ap.add_argument("--hops", nargs="+", type=int, choices=[1, 2, 3],
                     default=[1, 2, 3])
     ap.add_argument("--no-waterfall", action="store_true")
     ap.add_argument("--max-paths-3hop", type=int, default=1)
     ap.add_argument("--prefer-fdr", action="store_true")
     ap.add_argument("--combine-output", action="store_true")
-    ap.add_argument("--out-filename", default="all_genes_all_hops.csv")
+    ap.add_argument("--output-filename", default="all_genes_all_hops.csv")
     ap.add_argument("--workers", type=int, default=1)
     ap.add_argument("--verbose", action="store_true")
     args = ap.parse_args(argv)
@@ -240,31 +240,31 @@ def main(argv: list[str] | None = None) -> None:
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
 
-    if not args.genes and not args.genes_csv:
-        logger.error("Supply either --genes or --genes-csv")
+    if not args.genes and not args.source_genes_csv:
+        logger.error("Supply either --genes or --source-genes-csv")
         sys.exit(1)
 
     for label, path in [("--graph-pkl", args.graph_pkl),
-                        ("--endo-list", args.endo_list),
+                        ("--endothelial-list", args.endothelial_list),
                         ("--deg-dir", args.deg_dir)]:
         if not os.path.exists(path):
             logger.error("%s not found: %s", label, path)
             sys.exit(1)
 
-    os.makedirs(args.out_dir, exist_ok=True)
+    os.makedirs(args.output_dir, exist_ok=True)
     graph, _ = load_graph(args.graph_pkl)
-    whitelist = load_gene_set(args.endo_list, gene_col=args.endo_col)
+    whitelist = load_gene_set(args.endothelial_list, gene_column=args.endothelial_column)
     whitelist = {g for g in whitelist if g in graph and is_hgnc_node(graph, g)}
     logger.info("Whitelist in-graph: %d", len(whitelist))
 
     if args.genes:
         raw_genes = [g.strip() for g in args.genes if g.strip()]
     else:
-        df = pd.read_csv(args.genes_csv, low_memory=False)
-        if args.flag_col and args.flag_val and args.flag_col in df.columns:
-            df = df[df[args.flag_col] == args.flag_val]
+        df = pd.read_csv(args.source_genes_csv, low_memory=False)
+        if args.filter_column and args.filter_value and args.filter_column in df.columns:
+            df = df[df[args.filter_column] == args.filter_value]
         raw_genes = [
-            s.strip() for s in df[args.gene_col].dropna().astype(str) if s.strip()
+            s.strip() for s in df[args.gene_column].dropna().astype(str) if s.strip()
         ]
 
     gene_pairs = [(r, normalize_hgnc_symbol(r)) for r in raw_genes]
@@ -294,12 +294,12 @@ def main(argv: list[str] | None = None) -> None:
 
     if args.combine_output:
         combined = pd.concat(list(results.values()), ignore_index=True)
-        out = os.path.join(args.out_dir, args.out_filename)
+        out = os.path.join(args.output_dir, args.output_filename)
         combined.to_csv(out, index=False)
         logger.info("Combined: %d rows -> %s", len(combined), out)
     else:
         for raw, df in results.items():
-            out = os.path.join(args.out_dir, f"{raw}_all_hops.csv")
+            out = os.path.join(args.output_dir, f"{raw}_all_hops.csv")
             df.to_csv(out, index=False)
             logger.info("%s: %d rows -> %s", raw, len(df), out)
 

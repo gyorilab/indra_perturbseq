@@ -310,3 +310,45 @@ def enrich_evidence_3hop(
             df.at[idx, f"evidence_text_hop{hop}"] = ev
             df.at[idx, f"pmids_hop{hop}"] = pm
     return df
+
+
+def enrich_evidence_4hop(
+    df: pd.DataFrame,
+    neo4j_batch_size: int = 2000,
+) -> pd.DataFrame:
+    """Add evidence text and PMIDs columns for hop1--hop4 from Neo4j."""
+    df = df.copy()
+    for c in ("evidence_text_hop1", "pmids_hop1",
+              "evidence_text_hop2", "pmids_hop2",
+              "evidence_text_hop3", "pmids_hop3",
+              "evidence_text_hop4", "pmids_hop4"):
+        if c not in df.columns:
+            df[c] = ""
+
+    hashes: set[int] = set()
+    for c in ("hop1_hash", "hop2_hash", "hop3_hash", "hop4_hash"):
+        if c not in df.columns:
+            continue
+        vals = pd.to_numeric(df[c], errors="coerce").dropna().astype(np.int64)
+        hashes.update(int(v) for v in vals)
+
+    logger.info("Evidence fetch (Neo4j, 4-hop): %d unique stmt_hashes", len(hashes))
+    if not hashes:
+        return df
+
+    ev_map = fetch_evidence_from_neo4j(sorted(hashes), batch_size=neo4j_batch_size)
+
+    def _fill_hop(row, hop_num: int) -> tuple[str, str]:
+        h = row.get(f"hop{hop_num}_hash")
+        if isinstance(h, (int, np.integer)):
+            d = ev_map.get(int(h))
+            if d:
+                return format_evidence_text(d["evidence_text"]), "; ".join(d["pmids"])
+        return "No evidence found (Neo4j)", ""
+
+    for idx in df.index:
+        for hop in (1, 2, 3, 4):
+            ev, pm = _fill_hop(df.loc[idx], hop)
+            df.at[idx, f"evidence_text_hop{hop}"] = ev
+            df.at[idx, f"pmids_hop{hop}"] = pm
+    return df

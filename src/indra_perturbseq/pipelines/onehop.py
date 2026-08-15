@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 def run_1hop(
     graph,
     genes: list[str],
-    de_dir: str,
+    deg_dir: str,
     p_threshold: float,
     prefer_fdr: bool,
 ) -> pd.DataFrame:
@@ -41,7 +41,7 @@ def run_1hop(
             continue
 
         targets, deg_map, err = load_deg_targets(
-            de_dir, raw_gene, p_threshold, prefer_fdr,
+            deg_dir, raw_gene, p_threshold, prefer_fdr,
         )
         if err:
             logger.debug("[%d/%d] %s: %s", i, len(genes), raw_gene, err)
@@ -108,17 +108,17 @@ def main(argv: list[str] | None = None) -> None:
     )
     ap.add_argument("--graph-pkl", required=True,
                     help="Path to INDRA network export .pkl")
-    ap.add_argument("--perturbations-csv", required=True,
+    ap.add_argument("--source-genes-csv", required=True,
                     help="target_validation_expanded.csv")
-    ap.add_argument("--de-dir", required=True,
+    ap.add_argument("--deg-dir", required=True,
                     help="Folder with <GENE>_vs_control.csv files")
-    ap.add_argument("--out-csv-main", required=True,
+    ap.add_argument("--output-main", required=True,
                     help="Output CSV for non-self paths")
-    ap.add_argument("--out-csv-self", required=True,
+    ap.add_argument("--output-self-targets", required=True,
                     help="Output CSV for self paths")
-    ap.add_argument("--karen-flag-col", default="Karen_Flag")
-    ap.add_argument("--karen-flag-value", default="Use_for_analysis")
-    ap.add_argument("--gene-col", default="Gene")
+    ap.add_argument("--filter-column", default="analysis_flag")
+    ap.add_argument("--filter-value", default="Use_for_analysis")
+    ap.add_argument("--gene-column", default="Gene")
     ap.add_argument("--p-threshold", type=float, default=0.05)
     ap.add_argument("--prefer-fdr", action="store_true")
     args = ap.parse_args(argv)
@@ -126,25 +126,25 @@ def main(argv: list[str] | None = None) -> None:
     graph, _ = load_graph(args.graph_pkl)
 
     genes = load_source_genes(
-        args.perturbations_csv,
-        gene_col=args.gene_col,
-        flag_col=args.karen_flag_col,
-        flag_value=args.karen_flag_value,
+        args.source_genes_csv,
+        gene_column=args.gene_column,
+        filter_column=args.filter_column,
+        filter_value=args.filter_value,
     )
 
-    df = run_1hop(graph, genes, args.de_dir, args.p_threshold, args.prefer_fdr)
+    df = run_1hop(graph, genes, args.deg_dir, args.p_threshold, args.prefer_fdr)
     df = _fill_english_statements(df)
 
     main_df = df[df["source"] != df["target"]].copy()
     self_df = df[df["source"] == df["target"]].copy()
 
-    os.makedirs(os.path.dirname(args.out_csv_main) or ".", exist_ok=True)
-    os.makedirs(os.path.dirname(args.out_csv_self) or ".", exist_ok=True)
-    main_df.to_csv(args.out_csv_main, index=False)
-    self_df.to_csv(args.out_csv_self, index=False)
+    os.makedirs(os.path.dirname(args.output_main) or ".", exist_ok=True)
+    os.makedirs(os.path.dirname(args.output_self_targets) or ".", exist_ok=True)
+    main_df.to_csv(args.output_main, index=False)
+    self_df.to_csv(args.output_self_targets, index=False)
 
-    logger.info("Non-self rows: %d -> %s", len(main_df), args.out_csv_main)
-    logger.info("Self rows:     %d -> %s", len(self_df), args.out_csv_self)
+    logger.info("Non-self rows: %d -> %s", len(main_df), args.output_main)
+    logger.info("Self rows:     %d -> %s", len(self_df), args.output_self_targets)
 
 
 if __name__ == "__main__":

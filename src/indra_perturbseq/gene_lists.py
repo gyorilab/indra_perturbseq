@@ -1,4 +1,4 @@
-"""Loading and filtering of gene lists (endothelial, Karen sources, etc.)."""
+"""Loading and filtering of gene lists (endothelial, filtered sources, etc.)."""
 
 from __future__ import annotations
 
@@ -11,35 +11,35 @@ from indra_perturbseq.hgnc import normalize_hgnc_symbol
 logger = logging.getLogger(__name__)
 
 
-def load_gene_set(path: str, gene_col: str = "gene") -> set[str]:
+def load_gene_set(path: str, gene_column: str = "gene") -> set[str]:
     """Load a gene set from a CSV, normalizing symbols via HGNC.
 
     Parameters
     ----------
     path :
         CSV file path.
-    gene_col :
+    gene_column :
         Column containing gene symbols.
     """
     df = pd.read_csv(path, low_memory=False)
-    if gene_col not in df.columns:
+    if gene_column not in df.columns:
         raise ValueError(
-            f"CSV must have column '{gene_col}'. "
+            f"CSV must have column '{gene_column}'. "
             f"Columns: {df.columns.tolist()}"
         )
-    raw = set(df[gene_col].astype(str).str.strip())
+    raw = set(df[gene_column].astype(str).str.strip())
     raw.discard("")
     out = {normalize_hgnc_symbol(g) or g for g in raw}
     out.discard("")
-    logger.info("Loaded %d genes from %s (col=%s)", len(out), path, gene_col)
+    logger.info("Loaded %d genes from %s (col=%s)", len(out), path, gene_column)
     return out
 
 
 def load_source_genes(
-    genes_csv: str,
-    gene_col: str = "Gene",
-    flag_col: str = "Karen_Flag",
-    flag_value: str = "Use_for_analysis",
+    source_genes_csv: str,
+    gene_column: str = "Gene",
+    filter_column: str = "analysis_flag",
+    filter_value: str = "Use_for_analysis",
     explicit_genes: list[str] | None = None,
     limit: int = 0,
 ) -> list[str]:
@@ -47,14 +47,14 @@ def load_source_genes(
 
     Parameters
     ----------
-    genes_csv :
+    source_genes_csv :
         Path to ``target_validation_expanded.csv``.
-    gene_col :
+    gene_column :
         Column with gene symbols.
-    flag_col :
-        Column used for filtering (e.g. Karen_Flag).
-    flag_value :
-        Required value in *flag_col*.
+    filter_column :
+        Column used for filtering.
+    filter_value :
+        Required value in *filter_column*.
     explicit_genes :
         If provided, use these instead of reading from CSV.
     limit :
@@ -63,12 +63,12 @@ def load_source_genes(
     if explicit_genes:
         genes = [s.strip() for s in explicit_genes if s.strip()]
     else:
-        df = pd.read_csv(genes_csv, low_memory=False)
-        if flag_col in df.columns:
-            df = df[df[flag_col] == flag_value].copy()
+        df = pd.read_csv(source_genes_csv, low_memory=False)
+        if filter_column in df.columns:
+            df = df[df[filter_column] == filter_value].copy()
         genes = [
             s.strip()
-            for s in df[gene_col].dropna().astype(str).tolist()
+            for s in df[gene_column].dropna().astype(str).tolist()
             if s.strip()
         ]
     if limit > 0:
@@ -77,21 +77,21 @@ def load_source_genes(
     return genes
 
 
-def load_karen_sources(
-    tv_path: str,
+def load_filtered_sources(
+    target_validation: str,
     source_col: str = "Gene",
-    flag_col: str = "Karen_Flag",
-    flag_value: str = "Use_for_analysis",
+    filter_column: str = "analysis_flag",
+    filter_value: str = "Use_for_analysis",
 ) -> list[str]:
-    """Load unique, normalized Karen-flagged source genes.
+    """Load unique, normalized filtered source genes.
 
     Returns a deduplicated list preserving first-occurrence order.
     """
-    tv = pd.read_csv(tv_path, low_memory=False)
-    for c in (source_col, flag_col):
+    tv = pd.read_csv(target_validation, low_memory=False)
+    for c in (source_col, filter_column):
         if c not in tv.columns:
-            raise ValueError(f"Missing column '{c}' in {tv_path}")
-    tv = tv[tv[flag_col] == flag_value].copy()
+            raise ValueError(f"Missing column '{c}' in {target_validation}")
+    tv = tv[tv[filter_column] == filter_value].copy()
     raw = [s.strip() for s in tv[source_col].dropna().astype(str) if s.strip()]
 
     seen: set[str] = set()

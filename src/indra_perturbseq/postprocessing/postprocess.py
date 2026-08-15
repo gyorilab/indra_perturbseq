@@ -160,20 +160,20 @@ def main(argv: list[str] | None = None) -> None:
     )
     ap.add_argument("--input-csv", required=True)
     ap.add_argument("--mesh-reference", required=True)
-    ap.add_argument("--out-mesh-filtered", required=True)
-    ap.add_argument("--out-unique", required=True)
+    ap.add_argument("--output-mesh-filtered", required=True)
+    ap.add_argument("--output-unique", required=True)
     args = ap.parse_args(argv)
 
     df = pd.read_csv(args.input_csv, low_memory=False)
     logger.info("Loaded %d rows from %s", len(df), args.input_csv)
 
     df_mesh = apply_mesh_filter(df, args.mesh_reference)
-    df_mesh.to_csv(args.out_mesh_filtered, index=False)
-    logger.info("MeSH-filtered -> %s", args.out_mesh_filtered)
+    df_mesh.to_csv(args.output_mesh_filtered, index=False)
+    logger.info("MeSH-filtered -> %s", args.output_mesh_filtered)
 
     df_unique = deduplicate_by_source_target(df_mesh)
-    df_unique.to_csv(args.out_unique, index=False)
-    logger.info("Unique (source,target) -> %s", args.out_unique)
+    df_unique.to_csv(args.output_unique, index=False)
+    logger.info("Unique (source,target) -> %s", args.output_unique)
 
 
 if __name__ == "__main__":

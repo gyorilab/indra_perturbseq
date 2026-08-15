@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 def run_3hop_for_gene(
     graph: nx.DiGraph,
     gene: str,
-    de_dir: str,
+    deg_dir: str,
     p_threshold: float,
     prefer_fdr: bool,
     allowed_intermediates: set[str],
@@ -39,7 +39,7 @@ def run_3hop_for_gene(
 ) -> tuple[list[dict], str]:
     """Find 3-hop paths: source -> mid1 -> mid2 -> target."""
     targets, deg_map, err = load_deg_targets(
-        de_dir, gene, p_threshold, prefer_fdr,
+        deg_dir, gene, p_threshold, prefer_fdr,
     )
     if err:
         return [], f"SKIP {gene}: {err}"
@@ -136,23 +136,23 @@ def main(argv: list[str] | None = None) -> None:
         description="3-hop pipeline using INDRA network export + Neo4j evidence.",
     )
     ap.add_argument("--graph-pkl", required=True)
-    ap.add_argument("--genes-csv", required=True,
+    ap.add_argument("--source-genes-csv", required=True,
                     help="target_validation_expanded.csv")
-    ap.add_argument("--de-dir", required=True)
+    ap.add_argument("--deg-dir", required=True)
     ap.add_argument("--endothelial-list", required=True,
                     help="CSV with 'gene' column")
     ap.add_argument("--mesh-reference", required=True)
 
-    ap.add_argument("--out-csv-raw", required=True,
+    ap.add_argument("--output-raw", required=True,
                     help="Raw 3-hop rows (pre-enrichment)")
-    ap.add_argument("--out-csv-main", required=True,
+    ap.add_argument("--output-main", required=True,
                     help="Final enriched non-self rows")
-    ap.add_argument("--out-csv-self", required=True,
+    ap.add_argument("--output-self-targets", required=True,
                     help="Final enriched self rows")
 
-    ap.add_argument("--karen-flag-col", default="Karen_Flag")
-    ap.add_argument("--karen-flag-value", default="Use_for_analysis")
-    ap.add_argument("--gene-col", default="Gene")
+    ap.add_argument("--filter-column", default="analysis_flag")
+    ap.add_argument("--filter-value", default="Use_for_analysis")
+    ap.add_argument("--gene-column", default="Gene")
     ap.add_argument("--p-threshold", type=float, default=0.05)
     ap.add_argument("--prefer-fdr", action="store_true")
     ap.add_argument("--genes", nargs="+",
@@ -169,10 +169,10 @@ def main(argv: list[str] | None = None) -> None:
     allowed = load_gene_set(args.endothelial_list)
 
     genes = load_source_genes(
-        args.genes_csv,
-        gene_col=args.gene_col,
-        flag_col=args.karen_flag_col,
-        flag_value=args.karen_flag_value,
+        args.source_genes_csv,
+        gene_column=args.gene_column,
+        filter_column=args.filter_column,
+        filter_value=args.filter_value,
         explicit_genes=args.genes,
         limit=args.limit_genes,
     )
@@ -182,7 +182,7 @@ def main(argv: list[str] | None = None) -> None:
     with ThreadPoolExecutor(max_workers=args.path_workers) as ex:
         futs = {
             ex.submit(
-                run_3hop_for_gene, graph, g, args.de_dir,
+                run_3hop_for_gene, graph, g, args.deg_dir,
                 args.p_threshold, args.prefer_fdr, allowed,
                 args.limit_targets, args.max_paths_per_pair,
             ): g
@@ -200,9 +200,9 @@ def main(argv: list[str] | None = None) -> None:
 
     logger.info("Extraction complete: %d rows", len(df))
 
-    os.makedirs(os.path.dirname(args.out_csv_raw) or ".", exist_ok=True)
-    _reorder_columns(df.copy()).to_csv(args.out_csv_raw, index=False)
-    logger.info("Raw 3-hop rows saved: %s", args.out_csv_raw)
+    os.makedirs(os.path.dirname(args.output_raw) or ".", exist_ok=True)
+    _reorder_columns(df.copy()).to_csv(args.output_raw, index=False)
+    logger.info("Raw 3-hop rows saved: %s", args.output_raw)
 
     logger.info("Enriching evidence + PMIDs (Neo4j)...")
     df = enrich_evidence_3hop(df, neo4j_batch_size=args.neo4j_evidence_batch_size)
@@ -213,13 +213,13 @@ def main(argv: list[str] | None = None) -> None:
     main_df = df[df["source"] != df["target"]].copy()
     self_df = df[df["source"] == df["target"]].copy()
 
-    os.makedirs(os.path.dirname(args.out_csv_main) or ".", exist_ok=True)
-    os.makedirs(os.path.dirname(args.out_csv_self) or ".", exist_ok=True)
-    main_df.to_csv(args.out_csv_main, index=False)
-    self_df.to_csv(args.out_csv_self, index=False)
+    os.makedirs(os.path.dirname(args.output_main) or ".", exist_ok=True)
+    os.makedirs(os.path.dirname(args.output_self_targets) or ".", exist_ok=True)
+    main_df.to_csv(args.output_main, index=False)
+    self_df.to_csv(args.output_self_targets, index=False)
 
-    logger.info("Non-self rows: %d -> %s", len(main_df), args.out_csv_main)
-    logger.info("Self rows:     %d -> %s", len(self_df), args.out_csv_self)
+    logger.info("Non-self rows: %d -> %s", len(main_df), args.output_main)
+    logger.info("Self rows:     %d -> %s", len(self_df), args.output_self_targets)
 
 
 if __name__ == "__main__":

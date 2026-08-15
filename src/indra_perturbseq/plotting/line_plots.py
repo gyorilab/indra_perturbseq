@@ -46,7 +46,7 @@ def main(argv: list[str] | None = None) -> None:
     )
     ap.add_argument("--onehop-csv", required=True)
     ap.add_argument("--twohop-csv", required=True)
-    ap.add_argument("--out-prefix", required=True,
+    ap.add_argument("--output-prefix", required=True,
                     help="Output file prefix (e.g. output/overlay)")
     ap.add_argument("--title-suffix", default="")
     args = ap.parse_args(argv)
@@ -62,11 +62,11 @@ def main(argv: list[str] | None = None) -> None:
     _plot_overlay(datasets, "TPR_overall",
                   "TPR (overall)",
                   f"TPR vs threshold {args.title_suffix}".strip(),
-                  f"{args.out_prefix}_tpr.png")
+                  f"{args.output_prefix}_tpr.png")
     _plot_overlay(datasets, "FPR_overall",
                   "FPR (overall)",
                   f"FPR vs threshold {args.title_suffix}".strip(),
-                  f"{args.out_prefix}_fpr.png")
+                  f"{args.output_prefix}_fpr.png")
 
 
 if __name__ == "__main__":

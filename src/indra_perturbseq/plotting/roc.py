@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 
 from indra_perturbseq.deg import build_pvalue_map, deg_path_for_source
-from indra_perturbseq.gene_lists import load_karen_sources
+from indra_perturbseq.gene_lists import load_filtered_sources
 from indra_perturbseq.hgnc import normalize_hgnc_symbol
 
 logger = logging.getLogger(__name__)
@@ -86,25 +86,25 @@ def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(
         description="Compute ROC curves from threshold-based TPR/FPR.",
     )
-    ap.add_argument("--tv-path", required=True)
-    ap.add_argument("--de-dir", required=True)
+    ap.add_argument("--target-validation", required=True)
+    ap.add_argument("--deg-dir", required=True)
     ap.add_argument("--pos-paths", nargs="+", required=True,
                     help="Positive path CSVs (e.g. 1hop_main, 2hop_main)")
     ap.add_argument("--neg-paths", nargs="+", required=True,
                     help="Negative path CSVs (e.g. fp_1hop, fp_2hop)")
-    ap.add_argument("--out-csv", required=True)
-    ap.add_argument("--out-roc-overall", required=True)
-    ap.add_argument("--out-roc-per-source", required=True)
-    ap.add_argument("--tv-source-col", default="Gene")
-    ap.add_argument("--karen-flag-col", default="Karen_Flag")
-    ap.add_argument("--karen-flag-value", default="Use_for_analysis")
+    ap.add_argument("--output-csv", required=True)
+    ap.add_argument("--output-roc-overall", required=True)
+    ap.add_argument("--output-roc-per-source", required=True)
+    ap.add_argument("--source-column", default="Gene")
+    ap.add_argument("--filter-column", default="analysis_flag")
+    ap.add_argument("--filter-value", default="Use_for_analysis")
     ap.add_argument("--thresholds", nargs="+", type=float,
                     default=DEFAULT_THRESHOLDS)
     args = ap.parse_args(argv)
 
-    sources = load_karen_sources(
-        args.tv_path, args.tv_source_col,
-        args.karen_flag_col, args.karen_flag_value,
+    sources = load_filtered_sources(
+        args.target_validation, args.source_column,
+        args.filter_column, args.filter_value,
     )
 
     explained: set[tuple[str, str]] = set()
@@ -118,7 +118,7 @@ def main(argv: list[str] | None = None) -> None:
 
     cache: dict[str, tuple[np.ndarray, dict]] = {}
     for src in sources:
-        f = deg_path_for_source(args.de_dir, src)
+        f = deg_path_for_source(args.deg_dir, src)
         if not os.path.exists(f):
             continue
         pmap = build_pvalue_map(f, src)
@@ -168,14 +168,14 @@ def main(argv: list[str] | None = None) -> None:
             "FPR_per_source_avg": persrc_fprs[-1],
         })
 
-    pd.DataFrame(rows).to_csv(args.out_csv, index=False)
-    logger.info("Stats CSV: %s", args.out_csv)
+    pd.DataFrame(rows).to_csv(args.output_csv, index=False)
+    logger.info("Stats CSV: %s", args.output_csv)
 
-    os.makedirs(os.path.dirname(args.out_roc_overall) or ".", exist_ok=True)
+    os.makedirs(os.path.dirname(args.output_roc_overall) or ".", exist_ok=True)
     plot_roc(overall_fprs, overall_tprs,
-             "ROC curve (overall rate)", args.out_roc_overall)
+             "ROC curve (overall rate)", args.output_roc_overall)
     plot_roc(persrc_fprs, persrc_tprs,
-             "ROC curve (per-source average)", args.out_roc_per_source)
+             "ROC curve (per-source average)", args.output_roc_per_source)
 
 
 if __name__ == "__main__":

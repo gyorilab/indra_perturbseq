@@ -147,24 +147,24 @@ def main(argv: list[str] | None = None) -> None:
         description="Export FP paths using per-source DEG universes.",
     )
     ap.add_argument("--graph-pkl", required=True)
-    ap.add_argument("--genes-csv", required=True)
-    ap.add_argument("--de-dir", required=True)
+    ap.add_argument("--source-genes-csv", required=True)
+    ap.add_argument("--deg-dir", required=True)
     ap.add_argument("--allowed-intermediates-csv", default="")
     ap.add_argument("--allowed-intermediates-gene-col", default="gene")
     ap.add_argument("--p-threshold", type=float, default=0.05)
     ap.add_argument("--prefer-fdr", action="store_true")
-    ap.add_argument("--karen-flag-col", default="Karen_Flag")
-    ap.add_argument("--karen-flag-value", default="Use_for_analysis")
-    ap.add_argument("--gene-col", default="Gene")
+    ap.add_argument("--filter-column", default="analysis_flag")
+    ap.add_argument("--filter-value", default="Use_for_analysis")
+    ap.add_argument("--gene-column", default="Gene")
     ap.add_argument("--mode", choices=["1hop", "2hop", "3hop", "both", "all"],
                     default="both")
     ap.add_argument("--limit-negatives-per-source", type=int, default=0)
     ap.add_argument("--sample-seed", type=int, default=1)
     ap.add_argument("--permute-seed", type=int, default=0,
                     help="If >0, evaluate on permuted network")
-    ap.add_argument("--out-1hop-csv", default="")
-    ap.add_argument("--out-2hop-csv", default="")
-    ap.add_argument("--out-3hop-csv", default="")
+    ap.add_argument("--output-1hop", default="")
+    ap.add_argument("--output-2hop", default="")
+    ap.add_argument("--output-3hop", default="")
     ap.add_argument("--workers", type=int, default=4)
     args = ap.parse_args(argv)
 
@@ -175,7 +175,7 @@ def main(argv: list[str] | None = None) -> None:
     if args.allowed_intermediates_csv:
         allowed = load_gene_set(
             args.allowed_intermediates_csv,
-            gene_col=args.allowed_intermediates_gene_col,
+            gene_column=args.allowed_intermediates_gene_col,
         )
 
     pv = None
@@ -184,10 +184,10 @@ def main(argv: list[str] | None = None) -> None:
         logger.info("Evaluating on PERMUTED labels (seed=%d)", args.permute_seed)
 
     sources_raw = load_source_genes(
-        args.genes_csv,
-        gene_col=args.gene_col,
-        flag_col=args.karen_flag_col,
-        flag_value=args.karen_flag_value,
+        args.source_genes_csv,
+        gene_column=args.gene_column,
+        filter_column=args.filter_column,
+        filter_value=args.filter_value,
     )
 
     rng = np.random.default_rng(args.sample_seed)
@@ -197,7 +197,7 @@ def main(argv: list[str] | None = None) -> None:
         if not src or src not in graph or not is_hgnc_node(graph, src):
             continue
         all_tgts, pos_tgts, stats_map, err = load_deg_universe(
-            args.de_dir, raw_src, args.p_threshold, args.prefer_fdr,
+            args.deg_dir, raw_src, args.p_threshold, args.prefer_fdr,
         )
         if err:
             continue
@@ -243,11 +243,11 @@ def main(argv: list[str] | None = None) -> None:
         logger.info("Wrote %s -> %s | rows=%d", label, path, len(df))
 
     if args.mode in ("1hop", "both", "all"):
-        _write(rows_1, args.out_1hop_csv, "1-hop FP")
+        _write(rows_1, args.output_1hop, "1-hop FP")
     if args.mode in ("2hop", "both", "all"):
-        _write(rows_2, args.out_2hop_csv, "2-hop FP")
+        _write(rows_2, args.output_2hop, "2-hop FP")
     if args.mode in ("3hop", "all"):
-        _write(rows_3, args.out_3hop_csv, "3-hop FP")
+        _write(rows_3, args.output_3hop, "3-hop FP")
 
 
 if __name__ == "__main__":
