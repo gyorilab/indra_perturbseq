@@ -8,6 +8,40 @@ Using INDRA to explain Perturb-seq data through multi-hop pathway analysis.
 pip install -e .
 ```
 
+## Data Layout (Manager-Runnable)
+
+The repository now keeps runnable input datasets in a fixed location:
+
+```text
+data/
+  inputs/
+    indra_1hop_network_export_main.csv
+    2hop_network_export_main.csv
+    3hop_network_export_raw.csv
+    target_validation_expanded.csv
+  de_results_per_gene/
+    <GENE>_vs_control.csv
+outputs/
+  plots/
+  tables/
+```
+
+Use these paths so anyone cloning the repo can run commands directly.
+
+Example (boxplots):
+
+```bash
+python src/indra_perturbseq/plotting/boxplots.py \
+  --hop1-csv data/inputs/indra_1hop_network_export_main.csv \
+  --hop2-csv data/inputs/2hop_network_export_main.csv \
+  --hop3-csv data/inputs/3hop_network_export_raw.csv \
+  --target-validation data/inputs/target_validation_expanded.csv \
+  --deg-dir data/de_results_per_gene \
+  --output-pval-plot outputs/plots/pvalue_distributions_boxplot.png \
+  --output-lfc-plot outputs/plots/logfoldchange_distributions_boxplot.png \
+  --output-csv outputs/tables/final_dataset_for_boxplots.csv
+```
+
 ## Package Structure
 
 ```

@@ -212,6 +212,14 @@ cache/
 *.parquet
 *.h5ad
 *.xlsx
+outputs/
+
+# Versioned runnable input data
+!data/
+!data/inputs/
+!data/inputs/*.csv
+!data/de_results_per_gene/
+!data/de_results_per_gene/*.csv
 
 # Archive directory is tracked but excluded from linting
 # archive/
