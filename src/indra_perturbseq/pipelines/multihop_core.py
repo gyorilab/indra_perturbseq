@@ -15,6 +15,7 @@ from indra_perturbseq.deg import pick_sig_column
 from indra_perturbseq.graph import is_hgnc_node
 from indra_perturbseq.hgnc import normalize_hgnc_symbol
 from indra_perturbseq.statements import best_statement, indra_html_url
+from indra_perturbseq.utils.selected_statement_cache import SelectedStatementCache
 
 
 def column_order(max_hop: int) -> list[str]:
@@ -192,12 +193,18 @@ def _make_row_from_path(
     return row
 
 
-def _run_1hop(graph, src, target_set, deg_map):
+def _run_1hop(graph, src, target_set, deg_map, selection_cache: SelectedStatementCache | None = None):
     rows, found = [], set()
     for tgt in graph.successors(src):
         if not is_hgnc_node(graph, tgt) or tgt not in target_set or tgt == src:
             continue
-        s1 = best_statement(graph.get_edge_data(src, tgt), require_incdec=True)
+        s1 = best_statement(
+            graph.get_edge_data(src, tgt),
+            require_incdec=True,
+            source=src,
+            target=tgt,
+            selection_cache=selection_cache,
+        )
         if not s1:
             continue
         rows.append(_make_row_from_path(1, [src, tgt], [s1], deg_map))
@@ -205,12 +212,26 @@ def _run_1hop(graph, src, target_set, deg_map):
     return rows, found
 
 
-def _run_2hop(graph, src, intermediate_set, target_set, deg_map, excluded):
+def _run_2hop(
+    graph,
+    src,
+    intermediate_set,
+    target_set,
+    deg_map,
+    excluded,
+    selection_cache: SelectedStatementCache | None = None,
+):
     rows, found = [], set()
     for mid in graph.successors(src):
         if not is_hgnc_node(graph, mid) or mid not in intermediate_set or mid == src:
             continue
-        s1 = best_statement(graph.get_edge_data(src, mid), require_incdec=False)
+        s1 = best_statement(
+            graph.get_edge_data(src, mid),
+            require_incdec=False,
+            source=src,
+            target=mid,
+            selection_cache=selection_cache,
+        )
         if not s1:
             continue
         for tgt in graph.successors(mid):
@@ -218,7 +239,13 @@ def _run_2hop(graph, src, intermediate_set, target_set, deg_map, excluded):
                 continue
             if tgt in (src, mid) or tgt in excluded:
                 continue
-            s2 = best_statement(graph.get_edge_data(mid, tgt), require_incdec=True)
+            s2 = best_statement(
+                graph.get_edge_data(mid, tgt),
+                require_incdec=True,
+                source=mid,
+                target=tgt,
+                selection_cache=selection_cache,
+            )
             if not s2:
                 continue
             rows.append(_make_row_from_path(2, [src, mid, tgt], [s1, s2], deg_map))
@@ -226,12 +253,27 @@ def _run_2hop(graph, src, intermediate_set, target_set, deg_map, excluded):
     return rows, found
 
 
-def _run_3hop(graph, src, intermediate_set, target_set, deg_map, excluded, max_per_pair):
+def _run_3hop(
+    graph,
+    src,
+    intermediate_set,
+    target_set,
+    deg_map,
+    excluded,
+    max_per_pair,
+    selection_cache: SelectedStatementCache | None = None,
+):
     candidates: dict[str, list[tuple[float, dict]]] = {}
     for mid1 in graph.successors(src):
         if not is_hgnc_node(graph, mid1) or mid1 not in intermediate_set or mid1 == src:
             continue
-        s1 = best_statement(graph.get_edge_data(src, mid1), require_incdec=False)
+        s1 = best_statement(
+            graph.get_edge_data(src, mid1),
+            require_incdec=False,
+            source=src,
+            target=mid1,
+            selection_cache=selection_cache,
+        )
         if not s1:
             continue
         for mid2 in graph.successors(mid1):
@@ -239,7 +281,13 @@ def _run_3hop(graph, src, intermediate_set, target_set, deg_map, excluded, max_p
                 continue
             if mid2 in (src, mid1):
                 continue
-            s2 = best_statement(graph.get_edge_data(mid1, mid2), require_incdec=False)
+            s2 = best_statement(
+                graph.get_edge_data(mid1, mid2),
+                require_incdec=False,
+                source=mid1,
+                target=mid2,
+                selection_cache=selection_cache,
+            )
             if not s2:
                 continue
             for tgt in graph.successors(mid2):
@@ -247,7 +295,13 @@ def _run_3hop(graph, src, intermediate_set, target_set, deg_map, excluded, max_p
                     continue
                 if tgt in (src, mid1, mid2) or tgt in excluded:
                     continue
-                s3 = best_statement(graph.get_edge_data(mid2, tgt), require_incdec=True)
+                s3 = best_statement(
+                    graph.get_edge_data(mid2, tgt),
+                    require_incdec=True,
+                    source=mid2,
+                    target=tgt,
+                    selection_cache=selection_cache,
+                )
                 if not s3:
                     continue
                 row = _make_row_from_path(3, [src, mid1, mid2, tgt], [s1, s2, s3], deg_map)
@@ -270,6 +324,7 @@ def _run_nhop_pathfinding(
     excluded: set[str],
     hop: int,
     max_per_pair: int,
+    selection_cache: SelectedStatementCache | None = None,
 ) -> list[dict]:
     expected_len = hop + 1
     rows: list[dict] = []
@@ -301,6 +356,9 @@ def _run_nhop_pathfinding(
                     s = best_statement(
                         graph.get_edge_data(path[i], path[i + 1]),
                         require_incdec=require_incdec,
+                        source=path[i],
+                        target=path[i + 1],
+                        selection_cache=selection_cache,
                     )
                     if not s:
                         ok = False
@@ -332,6 +390,7 @@ def process_gene(
     args,
     max_hop: int,
     logger,
+    selection_cache: SelectedStatementCache | None = None,
 ):
     if not gene or gene not in graph or not is_hgnc_node(graph, gene):
         logger.warning("[%s] SKIP -- not in graph as HGNC", raw_gene)
@@ -344,10 +403,16 @@ def process_gene(
 
     for hop in args.hops:
         if hop == 1:
-            rows, found = _run_1hop(graph, gene, target_set, deg_map)
+            rows, found = _run_1hop(graph, gene, target_set, deg_map, selection_cache=selection_cache)
         elif hop == 2:
             rows, found = _run_2hop(
-                graph, gene, intermediate_set, target_set, deg_map, excluded,
+                graph,
+                gene,
+                intermediate_set,
+                target_set,
+                deg_map,
+                excluded,
+                selection_cache=selection_cache,
             )
         elif hop == 3:
             rows = _run_3hop(
@@ -358,6 +423,7 @@ def process_gene(
                 deg_map,
                 excluded,
                 args.max_paths_3hop,
+                selection_cache=selection_cache,
             )
             found = {r["target"] for r in rows}
         else:
@@ -370,6 +436,7 @@ def process_gene(
                 excluded,
                 hop,
                 args.max_paths_per_pair,
+                selection_cache=selection_cache,
             )
             found = {r["target"] for r in rows}
 

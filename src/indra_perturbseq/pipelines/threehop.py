@@ -32,6 +32,7 @@ from indra_perturbseq.pipelines.enrichment import (
     validate_enrichment_args,
 )
 from indra_perturbseq.statements import best_statement, indra_html_url
+from indra_perturbseq.utils.selected_statement_cache import SelectedStatementCache
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +46,7 @@ def run_3hop_for_gene(
     allowed_intermediates: set[str],
     limit_targets: int = 0,
     max_paths_per_pair: int = 1,
+    selection_cache: SelectedStatementCache | None = None,
 ) -> tuple[list[dict], str]:
     """Find 3-hop paths: source -> mid1 -> mid2 -> target."""
     targets, deg_map, err = load_deg_targets(
@@ -82,9 +84,27 @@ def run_3hop_for_gene(
                 if mid1 not in allowed_intermediates or mid2 not in allowed_intermediates:
                     continue
 
-                h1s = best_statement(graph.get_edge_data(src, mid1), require_incdec=False)
-                h2s = best_statement(graph.get_edge_data(mid1, mid2), require_incdec=False)
-                h3s = best_statement(graph.get_edge_data(mid2, tgt), require_incdec=True)
+                h1s = best_statement(
+                    graph.get_edge_data(src, mid1),
+                    require_incdec=False,
+                    source=src,
+                    target=mid1,
+                    selection_cache=selection_cache,
+                )
+                h2s = best_statement(
+                    graph.get_edge_data(mid1, mid2),
+                    require_incdec=False,
+                    source=mid1,
+                    target=mid2,
+                    selection_cache=selection_cache,
+                )
+                h3s = best_statement(
+                    graph.get_edge_data(mid2, tgt),
+                    require_incdec=True,
+                    source=mid2,
+                    target=tgt,
+                    selection_cache=selection_cache,
+                )
                 if not (h1s and h2s and h3s):
                     continue
 
@@ -185,11 +205,17 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--limit-targets", type=int, default=0)
     ap.add_argument("--max-paths-per-pair", type=int, default=1)
     ap.add_argument("--path-workers", type=int, default=4)
+    ap.add_argument(
+        "--selected-edge-cache-out",
+        default=None,
+        help="Optional CSV path to persist selected edge statements during extraction.",
+    )
     add_enrichment_cli_args(ap)
     args = ap.parse_args(argv)
     validate_enrichment_args(args, ap)
     graph, _ = load_graph(args.graph_pkl)
     allowed = load_gene_set(args.endothelial_list)
+    selection_cache = SelectedStatementCache() if args.selected_edge_cache_out else None
 
     genes = load_sources_from_args(args)
 
@@ -200,7 +226,7 @@ def main(argv: list[str] | None = None) -> None:
             ex.submit(
                 run_3hop_for_gene, graph, g, args.deg_dir,
                 args.p_threshold, args.prefer_fdr, allowed,
-                args.limit_targets, args.max_paths_per_pair,
+                args.limit_targets, args.max_paths_per_pair, selection_cache,
             ): g
             for g in genes
         }
@@ -229,6 +255,14 @@ def main(argv: list[str] | None = None) -> None:
 
     df = _reorder_columns(df)
     write_split_outputs(df, args.output_main, args.output_self_targets, logger)
+
+    if selection_cache is not None:
+        selection_cache.write_csv(args.selected_edge_cache_out)
+        logger.info(
+            "Selected edge cache: %d records -> %s",
+            len(selection_cache),
+            args.selected_edge_cache_out,
+        )
 
 
 if __name__ == "__main__":

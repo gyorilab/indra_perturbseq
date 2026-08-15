@@ -26,6 +26,7 @@ from indra_perturbseq.pipelines.enrichment import (
     validate_enrichment_args,
 )
 from indra_perturbseq.statements import best_statement, indra_html_url
+from indra_perturbseq.utils.selected_statement_cache import SelectedStatementCache
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,7 @@ def run_2hop_for_gene(
     prefer_fdr: bool,
     allowed_intermediates: set[str],
     limit_targets: int = 0,
+    selection_cache: SelectedStatementCache | None = None,
 ) -> tuple[list[dict], str]:
     """Find all 2-hop paths for a single source gene."""
     targets, deg_map, err = load_deg_targets(
@@ -59,12 +61,24 @@ def run_2hop_for_gene(
     for mid in graph.successors(src):
         if not is_hgnc_node(graph, mid) or mid not in allowed_intermediates:
             continue
-        hop1 = best_statement(graph.get_edge_data(src, mid), require_incdec=False)
+        hop1 = best_statement(
+            graph.get_edge_data(src, mid),
+            require_incdec=False,
+            source=src,
+            target=mid,
+            selection_cache=selection_cache,
+        )
         if not hop1:
             continue
 
         for tgt in set(graph.successors(mid)) & target_set:
-            hop2 = best_statement(graph.get_edge_data(mid, tgt), require_incdec=True)
+            hop2 = best_statement(
+                graph.get_edge_data(mid, tgt),
+                require_incdec=True,
+                source=mid,
+                target=tgt,
+                selection_cache=selection_cache,
+            )
             if not hop2:
                 continue
             stats = deg_map.get(tgt, {})
@@ -129,6 +143,11 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--limit-targets", type=int, default=0)
     ap.add_argument("--path-workers", type=int, default=4)
     ap.add_argument(
+        "--selected-edge-cache-out",
+        default=None,
+        help="Optional CSV path to persist selected edge statements during extraction.",
+    )
+    ap.add_argument(
         "--evidence-workers",
         type=int,
         default=8,
@@ -140,6 +159,7 @@ def main(argv: list[str] | None = None) -> None:
 
     graph, _ = load_graph(args.graph_pkl)
     allowed = load_gene_set(args.endothelial_list)
+    selection_cache = SelectedStatementCache() if args.selected_edge_cache_out else None
 
     genes = load_sources_from_args(args)
 
@@ -151,6 +171,7 @@ def main(argv: list[str] | None = None) -> None:
                 run_2hop_for_gene, graph, g, args.deg_dir,
                 args.p_threshold, args.prefer_fdr, allowed,
                 args.limit_targets,
+                selection_cache,
             ): g
             for g in genes
         }
@@ -169,6 +190,14 @@ def main(argv: list[str] | None = None) -> None:
     df = annotate_mesh_terms(df, args, pmid_columns=["pmids_hop1", "pmids_hop2"])
 
     write_split_outputs(df, args.output_main, args.output_self_targets, logger)
+
+    if selection_cache is not None:
+        selection_cache.write_csv(args.selected_edge_cache_out)
+        logger.info(
+            "Selected edge cache: %d records -> %s",
+            len(selection_cache),
+            args.selected_edge_cache_out,
+        )
 
 
 if __name__ == "__main__":

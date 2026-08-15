@@ -28,6 +28,7 @@ from indra_perturbseq.pipelines.multihop_core import (
     process_gene,
 )
 from indra_perturbseq.runtime import add_log_level_arg, configure_logging
+from indra_perturbseq.utils.selected_statement_cache import SelectedStatementCache
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +104,11 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap.add_argument("--limit-genes", type=int, default=0)
     ap.add_argument("--combine-output", action="store_true")
     ap.add_argument("--output-filename", default="all_genes_all_hops.csv")
+    ap.add_argument(
+        "--selected-edge-cache-out",
+        default=None,
+        help="Optional CSV path to persist selected edge statements during extraction.",
+    )
     ap.add_argument("--workers", type=int, default=1)
     ap.add_argument("--verbose", action="store_true")
     add_enrichment_cli_args(ap)
@@ -190,6 +196,7 @@ def main(argv: list[str] | None = None) -> None:
     os.makedirs(args.output_dir, exist_ok=True)
     graph, _ = load_graph(args.graph_pkl)
     gene_pairs, intermediate_set, target_set = _resolve_gene_sets(args, graph)
+    selection_cache = SelectedStatementCache() if args.selected_edge_cache_out else None
 
     results: dict[str, pd.DataFrame] = {}
 
@@ -203,6 +210,7 @@ def main(argv: list[str] | None = None) -> None:
             args,
             max_hop,
             logger,
+            selection_cache=selection_cache,
         )
 
     if args.workers > 1:
@@ -236,6 +244,14 @@ def main(argv: list[str] | None = None) -> None:
             out = os.path.join(args.output_dir, f"{raw}_all_hops.csv")
             df.to_csv(out, index=False)
             logger.info("%s: %d rows -> %s", raw, len(df), out)
+
+    if selection_cache is not None:
+        selection_cache.write_csv(args.selected_edge_cache_out)
+        logger.info(
+            "Selected edge cache: %d records -> %s",
+            len(selection_cache),
+            args.selected_edge_cache_out,
+        )
 
 
 if __name__ == "__main__":

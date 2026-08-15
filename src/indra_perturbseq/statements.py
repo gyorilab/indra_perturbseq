@@ -6,12 +6,18 @@ from __future__ import annotations
 import math
 from typing import Iterator
 
+from indra_perturbseq.utils.selected_statement_cache import SelectedStatementCache
+
 INCDEC = frozenset({"IncreaseAmount", "DecreaseAmount"})
 
 
 def best_statement(
     edge_data: dict | None,
     require_incdec: bool = False,
+    *,
+    source: str | None = None,
+    target: str | None = None,
+    selection_cache: SelectedStatementCache | None = None,
 ) -> dict | None:
     """Pick the highest-quality statement on an edge.
 
@@ -52,6 +58,13 @@ def best_statement(
             best_key = key
             best = s
 
+    if best and selection_cache is not None and source and target:
+        selection_cache.record(
+            source=source,
+            target=target,
+            require_incdec=require_incdec,
+            stmt=best,
+        )
     return best
 
 
