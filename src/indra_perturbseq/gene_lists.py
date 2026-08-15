@@ -62,16 +62,25 @@ def load_source_genes(
         If > 0, truncate to this many genes.
     """
     if explicit_genes:
-        genes = [s.strip() for s in explicit_genes if s.strip()]
+        raw_genes = [s.strip() for s in explicit_genes if s.strip()]
     else:
         df = pd.read_csv(source_genes_csv, low_memory=False)
         if filter_column in df.columns:
             df = df[df[filter_column] == filter_value].copy()
-        genes = [
+        raw_genes = [
             s.strip()
             for s in df[gene_column].dropna().astype(str).tolist()
             if s.strip()
         ]
+
+    seen: set[str] = set()
+    genes: list[str] = []
+    for g in raw_genes:
+        n = normalize_hgnc_symbol(g)
+        if n and n not in seen:
+            genes.append(n)
+            seen.add(n)
+
     if limit > 0:
         genes = genes[:limit]
     logger.info("Source genes to process: %d", len(genes))
