@@ -16,16 +16,20 @@ import pandas as pd
 from indra.explanation.pathfinding.pathfinding import shortest_simple_paths
 
 from indra_perturbseq.deg import load_deg_targets
-from indra_perturbseq.evidence import enrich_evidence_3hop
 from indra_perturbseq.gene_lists import load_gene_set
 from indra_perturbseq.graph import is_hgnc_node, load_graph
 from indra_perturbseq.hgnc import normalize_hgnc_symbol
-from indra_perturbseq.mesh import annotate_mesh
 from indra_perturbseq.pipelines.common import (
     ensure_parent_dir,
     load_sources_from_args,
     warn_deprecated_flags,
     write_split_outputs,
+)
+from indra_perturbseq.pipelines.enrichment import (
+    add_enrichment_cli_args,
+    annotate_mesh_terms,
+    enrich_evidence,
+    validate_enrichment_args,
 )
 from indra_perturbseq.statements import best_statement, indra_html_url
 
@@ -157,7 +161,6 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--deg-dir", required=True)
     ap.add_argument("--endothelial-list", required=True,
                     help="CSV with 'gene' column")
-    ap.add_argument("--mesh-reference", required=True)
 
     ap.add_argument("--output-raw", "--out-csv-raw", required=True,
                     help="Raw 3-hop rows (pre-enrichment)")
@@ -182,10 +185,9 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--limit-targets", type=int, default=0)
     ap.add_argument("--max-paths-per-pair", type=int, default=1)
     ap.add_argument("--path-workers", type=int, default=4)
-    ap.add_argument("--neo4j-evidence-batch-size", type=int, default=2000)
-    ap.add_argument("--mesh-batch-size", type=int, default=200)
+    add_enrichment_cli_args(ap)
     args = ap.parse_args(argv)
-
+    validate_enrichment_args(args, ap)
     graph, _ = load_graph(args.graph_pkl)
     allowed = load_gene_set(args.endothelial_list)
 
@@ -218,10 +220,12 @@ def main(argv: list[str] | None = None) -> None:
     _reorder_columns(df.copy()).to_csv(args.output_raw, index=False)
     logger.info("Raw 3-hop rows saved: %s", args.output_raw)
 
-    logger.info("Enriching evidence + PMIDs (Neo4j)...")
-    df = enrich_evidence_3hop(df, neo4j_batch_size=args.neo4j_evidence_batch_size)
-    logger.info("Annotating MeSH terms...")
-    df = annotate_mesh(df, args.mesh_reference, mesh_batch_size=args.mesh_batch_size)
+    df = enrich_evidence(
+        df,
+        args,
+        hop_hash_columns={1: "hop1_hash", 2: "hop2_hash", 3: "hop3_hash"},
+    )
+    df = annotate_mesh_terms(df, args, pmid_columns=["pmids_hop1", "pmids_hop2", "pmids_hop3"])
 
     df = _reorder_columns(df)
     write_split_outputs(df, args.output_main, args.output_self_targets, logger)
