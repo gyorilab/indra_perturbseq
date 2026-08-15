@@ -195,9 +195,7 @@ cython_debug/
 .pypirc
 
 # Cursor
-#  Cursor is an AI-powered code editor. `.cursorignore` specifies files/directories to
-#  exclude from AI features like autocomplete and code analysis. Recommended for sensitive data
-#  refer to https://docs.cursor.com/context/ignore-files
+.cursor/
 .cursorignore
 .cursorindexingignore
 
@@ -205,3 +203,30 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+cache/
+
+# Generated outputs (data files should not be in VCS)
+*.csv
+*.png
+*.pkl
+*.parquet
+*.h5ad
+*.xlsx
+outputs/
+
+# Versioned runnable input data
+!data/
+!data/inputs/
+!data/inputs/*.csv
+!data/de_results_per_gene/
+!data/de_results_per_gene/*.csv
+# Hub gene DEG files — not tracked (generated locally)
+data/de_results_per_gene/TP53_vs_control.csv
+data/de_results_per_gene/CDKN1A_vs_control.csv
+
+# Archive directory is tracked but excluded from linting
+# archive/
+
+# IDE
+.idea/
+.DS_Store

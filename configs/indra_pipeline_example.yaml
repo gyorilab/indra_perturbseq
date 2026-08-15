@@ -1,0 +1,45 @@
+run:
+  name: fsh_table_s6
+  output_dir: outputs/indra_pipeline/fsh_table_s6
+
+graph:
+  pkl_path: /path/to/indranet_dir_graph_fix_corr_weights.pkl
+
+sources:
+  values: [FSH]
+
+targets:
+  mode: table
+  path: /path/to/Table_S6.csv
+  gene_column: names
+  pval_column: pval
+  logfc_column: logfoldchange
+  deg_group_column: DEGs-group
+  p_threshold: 0.01
+  prefer_fdr: false
+
+hops:
+  include: [1, 2]
+  stmt_types: [IncreaseAmount, DecreaseAmount, Activation, Inhibition]
+  representative_statement_only: false
+
+intermediates:
+  mode: present_genes
+  file: null
+  column: gene
+
+evidence:
+  enabled: true
+  neo4j_batch_size: 2000
+  max_evidence_texts_per_statement: 20
+
+mesh:
+  terms_path: null
+  batch_size: 200
+
+plots:
+  enabled: true
+  include:
+    - pval_histogram
+    - logfc_histogram
+    - logfc_vs_pval_scatter
