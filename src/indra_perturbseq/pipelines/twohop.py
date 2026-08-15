@@ -11,15 +11,19 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import pandas as pd
 
 from indra_perturbseq.deg import load_deg_targets
-from indra_perturbseq.evidence import enrich_evidence_2hop
 from indra_perturbseq.gene_lists import load_gene_set
 from indra_perturbseq.graph import is_hgnc_node, load_graph
 from indra_perturbseq.hgnc import normalize_hgnc_symbol
-from indra_perturbseq.mesh import annotate_mesh
 from indra_perturbseq.pipelines.common import (
     load_sources_from_args,
     warn_deprecated_flags,
     write_split_outputs,
+)
+from indra_perturbseq.pipelines.enrichment import (
+    add_enrichment_cli_args,
+    annotate_mesh_terms,
+    enrich_evidence,
+    validate_enrichment_args,
 )
 from indra_perturbseq.statements import best_statement, indra_html_url
 
@@ -106,8 +110,6 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--deg-dir", required=True)
     ap.add_argument("--endothelial-list", required=True,
                     help="CSV with 'gene' column for allowed intermediates")
-    ap.add_argument("--mesh-reference", required=True,
-                    help="MeSH reference CSV for term filtering")
     ap.add_argument("--output-main", "--out-csv-main", required=True)
     ap.add_argument(
         "--output-self-targets",
@@ -126,9 +128,15 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--limit-genes", type=int, default=0)
     ap.add_argument("--limit-targets", type=int, default=0)
     ap.add_argument("--path-workers", type=int, default=4)
-    ap.add_argument("--evidence-workers", type=int, default=8)
-    ap.add_argument("--mesh-batch-size", type=int, default=200)
+    ap.add_argument(
+        "--evidence-workers",
+        type=int,
+        default=8,
+        help="Deprecated, ignored (Neo4j enrichment uses batch mode).",
+    )
+    add_enrichment_cli_args(ap)
     args = ap.parse_args(argv)
+    validate_enrichment_args(args, ap)
 
     graph, _ = load_graph(args.graph_pkl)
     allowed = load_gene_set(args.endothelial_list)
@@ -157,10 +165,8 @@ def main(argv: list[str] | None = None) -> None:
         return
 
     logger.info("Extraction complete: %d rows", len(df))
-    logger.info("Enriching evidence + PMIDs...")
-    df = enrich_evidence_2hop(df, max_workers=args.evidence_workers)
-    logger.info("Annotating MeSH terms...")
-    df = annotate_mesh(df, args.mesh_reference, mesh_batch_size=args.mesh_batch_size)
+    df = enrich_evidence(df, args, hop_hash_columns={1: "hop1_hash", 2: "hop2_hash"})
+    df = annotate_mesh_terms(df, args, pmid_columns=["pmids_hop1", "pmids_hop2"])
 
     write_split_outputs(df, args.output_main, args.output_self_targets, logger)
 
