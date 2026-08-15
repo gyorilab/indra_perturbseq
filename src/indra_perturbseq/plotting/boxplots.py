@@ -198,9 +198,15 @@ def _plot_pvalue(final_df: pd.DataFrame, out_path: str,
 
 
 def _plot_abs_lfc(final_df: pd.DataFrame, out_path: str,
-                  show_outliers: bool = False) -> None:
-    """Boxplot of |log fold-change| by pathway type."""
+                  show_outliers: bool = False, title_suffix: str = "") -> None:
+    """Boxplot of |log fold-change| by pathway type.
+
+    Only pairs with pval < 0.05 are included, matching _plot_pvalue so all
+    hop categories are comparable.
+    """
     plot_df = final_df.copy()
+    plot_df["pval"] = pd.to_numeric(plot_df["pval"], errors="coerce")
+    plot_df = plot_df[plot_df["pval"] < DE_PVAL_CUTOFF]
     plot_df["abs_logfoldchange"] = pd.to_numeric(
         plot_df["logfoldchange"], errors="coerce"
     ).abs()
@@ -228,7 +234,10 @@ def _plot_abs_lfc(final_df: pd.DataFrame, out_path: str,
     plt.axhline(y=0.0, color="black", linestyle="--", alpha=0.7, label="|logFC|=0")
     plt.xlabel("Pathway Type")
     plt.ylabel("|Log Fold-Change|")
-    plt.title("|Log Fold-Change| Distributions by Pathway Type")
+    title = "|Log Fold-Change| Distributions by Pathway Type"
+    if title_suffix:
+        title += f" — {title_suffix}"
+    plt.title(title)
     plt.grid(True, axis="y", alpha=0.3)
     plt.legend(loc="upper right")
     plt.tight_layout()
@@ -273,6 +282,11 @@ def main(argv: list[str] | None = None) -> None:
 
     with_hubs = bool(args.hub_1hop_csv or args.hub_2hop_csv or args.hub_genes)
     title_suffix = "with hubs" if with_hubs else ""
+    output_lfc = (
+        "logfoldchange_with_hubs.png"
+        if with_hubs and args.output_lfc_plot == "logfoldchange_distributions_boxplot.png"
+        else args.output_lfc_plot
+    )
 
     df1 = _load_hop_csv(args.hop1_csv, "1-hop")
     df2 = _load_hop_csv(args.hop2_csv, "2-hop")
@@ -296,11 +310,11 @@ def main(argv: list[str] | None = None) -> None:
                  show_outliers=True, title_suffix=title_suffix)
     _plot_pvalue(final_df, args.output_pval_no_outliers,
                  show_outliers=False, title_suffix=title_suffix)
-    _plot_abs_lfc(final_df, args.output_lfc_plot, show_outliers=False)
+    _plot_abs_lfc(final_df, output_lfc, show_outliers=False, title_suffix=title_suffix)
 
     logger.info(
         "Done. Generated: %s, %s, %s",
-        args.output_pval_with_outliers, args.output_pval_no_outliers, args.output_lfc_plot,
+        args.output_pval_with_outliers, args.output_pval_no_outliers, output_lfc,
     )
 
 
