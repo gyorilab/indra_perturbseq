@@ -7,6 +7,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from indra_perturbseq.deg_generation.common import (
+    RAW_BULK_KINDS,
+    RAW_INPUT_KINDS,
+    RAW_SINGLE_CELL_KINDS,
+)
+
 DEFAULT_STMT_TYPES = (
     "IncreaseAmount",
     "DecreaseAmount",
@@ -54,6 +60,31 @@ class InputConfig:
     path: str | None = None
     columns: InputColumnsConfig = field(default_factory=InputColumnsConfig)
     significance: InputSignificanceConfig = field(default_factory=InputSignificanceConfig)
+    adata_path: str | None = None
+    perturbation_column: str = "Gene"
+    control_labels: list[str] = field(
+        default_factory=lambda: ["negative-control", "safe-targeting"],
+    )
+    tss_suffix: str | None = "-TSS2"
+    deg_method: str = "wilcoxon"
+    min_cells: int = 1
+    normalize_log1p: bool = False
+    target_sum: float = 1e4
+    symbol_column: str | None = None
+    endothelial_genes_path: str | None = None
+    endothelial_gene_column: str = "gene"
+    deg_output_dir: str = "outputs/deg"
+    counts_path: str | None = None
+    metadata_path: str | None = None
+    sample_column: str = "sample_id"
+    source_column: str = "perturbation_gene"
+    condition_column: str = "condition"
+    control_label: str = "control"
+    deg_backend: str = "pydeseq2"
+    counts_orientation: str = "genes_by_samples"
+    count_gene_column: str | None = None
+    min_replicates: int = 1
+    n_cpus: int | None = None
 
 
 @dataclass
@@ -175,44 +206,40 @@ def _config_from_dict(data: dict[str, Any]) -> PipelineConfig:
     )
 
 
-def load_config(path: str | Path, output_dir: str | None = None) -> PipelineConfig:
+def load_config(
+    path: str | Path,
+    output_dir: str | None = None,
+    *,
+    require_graph: bool = True,
+) -> PipelineConfig:
     """Load and validate a pipeline config from YAML or JSON."""
     cfg = _config_from_dict(_read_config_file(path))
     if output_dir:
         cfg.run.output_dir = output_dir
-    validate_config(cfg)
+    validate_config(cfg, require_graph=require_graph)
     return cfg
 
 
-def validate_config(cfg: PipelineConfig) -> None:
+def validate_config(cfg: PipelineConfig, *, require_graph: bool = True) -> None:
     """Validate required fields and supported V1 options."""
-    if not cfg.graph.pkl_path:
+    if require_graph and not cfg.graph.pkl_path:
         raise ValueError("graph.pkl_path is required.")
 
     if cfg.input.kind:
-        if cfg.input.kind != "paired_table":
-            raise ValueError("input.kind currently supports 'paired_table'.")
-        if not cfg.input.path:
-            raise ValueError("input.path is required for input.kind='paired_table'.")
-        if not cfg.input.columns.source or not cfg.input.columns.target:
-            raise ValueError(
-                "input.columns.source and input.columns.target are required "
-                "for input.kind='paired_table'."
-            )
-        if cfg.input.significance.threshold < 0:
-            raise ValueError("input.significance.threshold must be non-negative.")
+        if cfg.input.kind == "paired_table":
+            _validate_paired_input(cfg)
+        elif cfg.input.kind in RAW_SINGLE_CELL_KINDS:
+            _validate_raw_single_cell_input(cfg)
+        elif cfg.input.kind in RAW_BULK_KINDS:
+            _validate_raw_bulk_input(cfg)
+        else:
+            supported = sorted({"paired_table"} | RAW_INPUT_KINDS)
+            raise ValueError(f"input.kind must be one of {supported}.")
     elif not cfg.sources.values and not cfg.sources.file:
         raise ValueError("Provide sources.values or sources.file.")
 
     if not cfg.input.kind:
-        if cfg.targets.mode not in {"table", "deg_dir"}:
-            raise ValueError("targets.mode must be 'table' or 'deg_dir'.")
-        if cfg.targets.mode == "table" and not cfg.targets.path:
-            raise ValueError("targets.path is required when targets.mode='table'.")
-        if cfg.targets.mode == "deg_dir" and not (cfg.targets.deg_dir or cfg.targets.path):
-            raise ValueError("targets.deg_dir is required when targets.mode='deg_dir'.")
-        if cfg.targets.p_threshold < 0:
-            raise ValueError("targets.p_threshold must be non-negative.")
+        _validate_targets(cfg)
 
     unsupported_hops = sorted(set(cfg.hops.include) - {1, 2})
     if unsupported_hops:
@@ -226,3 +253,103 @@ def validate_config(cfg: PipelineConfig) -> None:
         )
     if cfg.intermediates.mode == "user_list" and not cfg.intermediates.file:
         raise ValueError("intermediates.file is required for mode='user_list'.")
+
+
+def _validate_paired_input(cfg: PipelineConfig) -> None:
+    if not cfg.input.path:
+        raise ValueError("input.path is required for input.kind='paired_table'.")
+    if not cfg.input.columns.source or not cfg.input.columns.target:
+        raise ValueError(
+            "input.columns.source and input.columns.target are required "
+            "for input.kind='paired_table'."
+        )
+    if cfg.input.significance.threshold < 0:
+        raise ValueError("input.significance.threshold must be non-negative.")
+
+
+def _validate_raw_single_cell_input(cfg: PipelineConfig) -> None:
+    if not cfg.input.adata_path:
+        raise ValueError(f"input.adata_path is required for input.kind='{cfg.input.kind}'.")
+    if not cfg.input.perturbation_column:
+        raise ValueError("input.perturbation_column is required for raw single-cell input.")
+    if not cfg.input.control_labels:
+        raise ValueError("input.control_labels must contain at least one control label.")
+    if cfg.input.min_cells < 1:
+        raise ValueError("input.min_cells must be >= 1.")
+    if not cfg.input.deg_output_dir:
+        raise ValueError("input.deg_output_dir is required for raw DEG generation.")
+
+
+def _validate_raw_bulk_input(cfg: PipelineConfig) -> None:
+    if not cfg.input.counts_path:
+        raise ValueError("input.counts_path is required for input.kind='raw_bulk_rna'.")
+    if not cfg.input.metadata_path:
+        raise ValueError("input.metadata_path is required for input.kind='raw_bulk_rna'.")
+    if not cfg.input.deg_output_dir:
+        raise ValueError("input.deg_output_dir is required for raw DEG generation.")
+    if cfg.input.deg_backend not in {"pydeseq2", "ttest"}:
+        raise ValueError("input.deg_backend must be 'pydeseq2' or 'ttest'.")
+    if cfg.input.counts_orientation not in {"genes_by_samples", "samples_by_genes"}:
+        raise ValueError(
+            "input.counts_orientation must be 'genes_by_samples' or "
+            "'samples_by_genes'."
+        )
+    if cfg.input.min_replicates < 1:
+        raise ValueError("input.min_replicates must be >= 1.")
+
+
+def _validate_targets(cfg: PipelineConfig) -> None:
+    if cfg.targets.mode not in {"table", "deg_dir"}:
+        raise ValueError("targets.mode must be 'table' or 'deg_dir'.")
+    if cfg.targets.mode == "table" and not cfg.targets.path:
+        raise ValueError("targets.path is required when targets.mode='table'.")
+    if cfg.targets.mode == "deg_dir" and not (cfg.targets.deg_dir or cfg.targets.path):
+        raise ValueError("targets.deg_dir is required when targets.mode='deg_dir'.")
+    if cfg.targets.p_threshold < 0:
+        raise ValueError("targets.p_threshold must be non-negative.")
+
+
+def validate_config_paths(
+    cfg: PipelineConfig,
+    *,
+    skip_deg: bool = False,
+    deg_only: bool = False,
+) -> None:
+    """Validate local paths needed before a pipeline run starts."""
+    missing: list[str] = []
+
+    def require_file(label: str, path: str | None) -> None:
+        if path and not Path(path).is_file():
+            missing.append(f"{label}: {path}")
+
+    def require_dir(label: str, path: str | None) -> None:
+        if path and not Path(path).is_dir():
+            missing.append(f"{label}: {path}")
+
+    if not deg_only:
+        require_file("graph.pkl_path", cfg.graph.pkl_path)
+    require_file("sources.file", cfg.sources.file)
+    require_file("intermediates.file", cfg.intermediates.file)
+    require_file("mesh.terms_path", cfg.mesh.terms_path)
+
+    if cfg.input.kind == "paired_table":
+        require_file("input.path", cfg.input.path)
+    elif cfg.input.kind in RAW_SINGLE_CELL_KINDS:
+        if skip_deg:
+            require_dir("input.deg_output_dir", cfg.input.deg_output_dir)
+        else:
+            require_file("input.adata_path", cfg.input.adata_path)
+    elif cfg.input.kind in RAW_BULK_KINDS:
+        if skip_deg:
+            require_dir("input.deg_output_dir", cfg.input.deg_output_dir)
+        else:
+            require_file("input.counts_path", cfg.input.counts_path)
+            require_file("input.metadata_path", cfg.input.metadata_path)
+    elif cfg.targets.mode == "table":
+        require_file("targets.path", cfg.targets.path)
+    elif cfg.targets.mode == "deg_dir":
+        require_dir("targets.deg_dir", cfg.targets.deg_dir or cfg.targets.path)
+
+    if missing:
+        joined = "\n  - ".join(missing)
+        raise FileNotFoundError(f"Config references missing paths:\n  - {joined}")

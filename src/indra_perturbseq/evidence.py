@@ -1,6 +1,4 @@
-"""Evidence fetching from db.indra.bio and Neo4j.
-This module provides shared utilities used across the INDRA Perturb-seq codebase.
-"""
+"""Evidence enrichment for INDRA pipeline result tables."""
 
 from __future__ import annotations
 
@@ -26,36 +24,6 @@ _hash_cache: dict[int, dict] = {}
 def fetch_from_hash_json(stmt_hash: int) -> dict:
     """Fetch statement JSON from db.indra.bio by *stmt_hash*."""
     return fetch_statement_json(stmt_hash)
-
-
-def rich_stmt_text_from_hash(stmt_hash: int, cache: dict) -> str:
-    """Return human-readable statement text, caching results in *cache*."""
-    if stmt_hash in cache:
-        return cache[stmt_hash]
-    txt = ""
-    try:
-        data = fetch_from_hash_json(int(stmt_hash))
-        payload = (data.get("statements", {}) or {}).get(str(stmt_hash))
-        if isinstance(payload, str):
-            try:
-                import json
-
-                payload = json.loads(payload)
-            except Exception:
-                payload = None
-        if isinstance(payload, dict):
-            try:
-                from indra.assemblers.english import EnglishAssembler
-                from indra.statements.io import stmt_from_json
-
-                stmt = stmt_from_json(payload)
-                txt = EnglishAssembler([stmt]).make_model() or ""
-            except Exception:
-                txt = ""
-    except Exception:
-        txt = ""
-    cache[stmt_hash] = txt
-    return txt
 
 
 def evidence_from_hash(
@@ -303,6 +271,7 @@ def enrich_evidence(
     df: pd.DataFrame,
     hop_hash_columns: dict[int, str] | None = None,
     neo4j_batch_size: int = 2000,
+    max_texts_per_statement: int = 20,
     db_indra_fallback: bool = True,
 ) -> pd.DataFrame:
     """Add evidence text and PMIDs columns from Neo4j Evidence nodes.
@@ -316,6 +285,8 @@ def enrich_evidence(
         When omitted, uses ``hopN_hash`` columns discovered on *df*.
     neo4j_batch_size :
         Batch size for Neo4j statement-hash queries.
+    max_texts_per_statement :
+        Maximum evidence text snippets to keep for db.indra.bio fallback.
     db_indra_fallback :
         If ``True``, fill numeric stmt_hash misses from ``db.indra.bio`` only
         after Neo4j returns no evidence for them.
@@ -371,7 +342,10 @@ def enrich_evidence(
                 len(unresolved_hashes),
             )
             for h in unresolved_hashes:
-                ev_text, pmids, _sources = evidence_from_hash(h)
+                ev_text, pmids, _sources = evidence_from_hash(
+                    h,
+                    max_texts=max_texts_per_statement,
+                )
                 if ev_text != "No evidence returned (db.indra.bio)":
                     ev_map[h] = {
                         "evidence_text": ev_text,
@@ -396,51 +370,3 @@ def enrich_evidence(
                 df.at[idx, ev_col] = "No evidence found (Neo4j)"
                 df.at[idx, pm_col] = ""
     return df
-
-
-def enrich_evidence_1hop(
-    df: pd.DataFrame,
-    neo4j_batch_size: int = 2000,
-) -> pd.DataFrame:
-    """Add evidence text and PMIDs columns for hop1 from Neo4j."""
-    return enrich_evidence(
-        df,
-        hop_hash_columns={1: "stmt_hash"},
-        neo4j_batch_size=neo4j_batch_size,
-    )
-
-
-def enrich_evidence_2hop(
-    df: pd.DataFrame,
-    neo4j_batch_size: int = 2000,
-) -> pd.DataFrame:
-    """Add evidence text and PMIDs columns for hop1/hop2 from Neo4j."""
-    return enrich_evidence(
-        df,
-        hop_hash_columns={1: "hop1_hash", 2: "hop2_hash"},
-        neo4j_batch_size=neo4j_batch_size,
-    )
-
-
-def enrich_evidence_3hop(
-    df: pd.DataFrame,
-    neo4j_batch_size: int = 2000,
-) -> pd.DataFrame:
-    """Add evidence text and PMIDs columns for hop1/hop2/hop3 from Neo4j."""
-    return enrich_evidence(
-        df,
-        hop_hash_columns={1: "hop1_hash", 2: "hop2_hash", 3: "hop3_hash"},
-        neo4j_batch_size=neo4j_batch_size,
-    )
-
-
-def enrich_evidence_4hop(
-    df: pd.DataFrame,
-    neo4j_batch_size: int = 2000,
-) -> pd.DataFrame:
-    """Add evidence text and PMIDs columns for hop1--hop4 from Neo4j."""
-    return enrich_evidence(
-        df,
-        hop_hash_columns={1: "hop1_hash", 2: "hop2_hash", 3: "hop3_hash", 4: "hop4_hash"},
-        neo4j_batch_size=neo4j_batch_size,
-    )

@@ -2,16 +2,25 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 import logging
+from pathlib import Path
 
 import pandas as pd
 
+from indra_perturbseq.deg_generation.common import (
+    RAW_BULK_KINDS,
+    RAW_INPUT_KINDS,
+    RAW_SINGLE_CELL_KINDS,
+    sources_from_deg_dir,
+)
 from indra_perturbseq.graph import is_hgnc_node, load_graph
 from indra_perturbseq.indra_pipeline.config import PipelineConfig
 from indra_perturbseq.indra_pipeline.enrichment import enrich_1hop, enrich_2hop
 from indra_perturbseq.indra_pipeline.inputs import (
     SourceRecord,
     TargetData,
+    load_gene_list,
     load_target_data_for_source,
     resolve_intermediate_universe,
     resolve_sources,
@@ -28,6 +37,7 @@ from indra_perturbseq.indra_pipeline.path_search import (
     run_2hop_source_target_table,
 )
 from indra_perturbseq.indra_pipeline.source_targets import (
+    SourceTargetTable,
     build_source_target_table,
     full_hgnc_nodes,
     resolve_source_target_table,
@@ -40,6 +50,52 @@ def _empty_target_data() -> TargetData:
     return TargetData(
         targets=pd.DataFrame(columns=["target", "logfoldchange", "pval", "DEGs-group"]),
     )
+
+
+def _prepare_raw_deg_input(
+    cfg: PipelineConfig,
+    *,
+    skip_deg: bool = False,
+) -> tuple[PipelineConfig, dict[str, object] | None]:
+    """Generate or reuse DEG CSVs for raw input modes."""
+    if cfg.input.kind not in RAW_INPUT_KINDS:
+        return cfg, None
+
+    prepared = deepcopy(cfg)
+    raw_kind = prepared.input.kind
+    deg_dir = Path(prepared.input.deg_output_dir)
+
+    if skip_deg:
+        sources = sources_from_deg_dir(deg_dir)
+        if not sources:
+            raise FileNotFoundError(f"No *_vs_control.csv files found in {deg_dir}.")
+    elif raw_kind in RAW_SINGLE_CELL_KINDS:
+        from indra_perturbseq.deg_generation import single_cell
+
+        deg_dir, sources = single_cell.generate_single_cell_degs(prepared)
+    elif raw_kind in RAW_BULK_KINDS:
+        from indra_perturbseq.deg_generation import bulk
+
+        deg_dir, sources = bulk.generate_bulk_degs(prepared)
+    else:
+        raise ValueError(f"Unsupported raw input kind: {raw_kind}")
+
+    prepared.input.kind = None
+    prepared.targets.mode = "deg_dir"
+    prepared.targets.deg_dir = str(deg_dir)
+    prepared.targets.path = str(deg_dir)
+    prepared.targets.gene_column = prepared.targets.gene_column or "names"
+
+    if not prepared.sources.values and not prepared.sources.file:
+        prepared.sources.values = sources
+
+    return prepared, {
+        "raw_input_kind": raw_kind,
+        "deg_output_dir": str(deg_dir),
+        "deg_sources": sources,
+        "deg_source_count": len(sources),
+        "deg_skipped": skip_deg,
+    }
 
 
 def _load_targets(
@@ -93,11 +149,22 @@ def _summary_stats(
         t for t in significant
         if t in graph and is_hgnc_node(graph, t)
     }
+    return {
+        "sources_input": len(sources),
+        "sources_found": sum(1 for s in sources if s.found),
+        "sources_skipped": sum(1 for s in sources if not s.found),
+        "target_input_rows": input_rows,
+        "target_significant_rows": significant_rows,
+        "target_unique_significant": len(significant),
+        "target_graph_matched": len(graph_matched_targets),
+        "present_gene_universe_size": len(present),
+        "intermediate_universe_size": len(intermediates),
+    }
 
 
 def _summary_stats_source_target(
     cfg: PipelineConfig,
-    table,
+    table: SourceTargetTable,
     intermediates: set[str],
 ) -> dict[str, object]:
     rows = table.rows
@@ -120,32 +187,37 @@ def _summary_stats_source_target(
     }
 
 
-def _intermediates_for_source_target_input(graph, cfg: PipelineConfig, table) -> set[str]:
+def _intermediates_for_source_target_input(
+    graph,
+    cfg: PipelineConfig,
+    table: SourceTargetTable,
+) -> set[str]:
     if cfg.intermediates.mode == "full_hgnc":
         return full_hgnc_nodes(graph)
     if cfg.intermediates.file:
-        from indra_perturbseq.indra_pipeline.inputs import load_gene_list
-
         return load_gene_list(cfg.intermediates.file, cfg.intermediates.column)
     return {g for g in table.present_hgnc_genes if g in graph and is_hgnc_node(graph, g)}
-    return {
-        "sources_input": len(sources),
-        "sources_found": sum(1 for s in sources if s.found),
-        "sources_skipped": sum(1 for s in sources if not s.found),
-        "target_input_rows": input_rows,
-        "target_significant_rows": significant_rows,
-        "target_unique_significant": len(significant),
-        "target_graph_matched": len(graph_matched_targets),
-        "present_gene_universe_size": len(present),
-        "intermediate_universe_size": len(intermediates),
-    }
 
 
-def run_pipeline(cfg: PipelineConfig) -> dict[str, object]:
+def run_pipeline(
+    cfg: PipelineConfig,
+    *,
+    deg_only: bool = False,
+    skip_deg: bool = False,
+) -> dict[str, object]:
     """Run the configured pipeline and return paths plus dataframes."""
+    cfg, deg_info = _prepare_raw_deg_input(cfg, skip_deg=skip_deg)
+    if deg_only:
+        if deg_info is None:
+            raise ValueError("--deg-only requires a raw input.kind.")
+        return {
+            "paths": {"deg_dir": deg_info["deg_output_dir"]},
+            "deg": deg_info,
+        }
+
     graph, load_seconds = load_graph(cfg.graph.pkl_path)
 
-    if cfg.input.kind:
+    if cfg.input.kind == "paired_table":
         source_target_table = resolve_source_target_table(
             graph,
             build_source_target_table(cfg),
@@ -179,6 +251,8 @@ def run_pipeline(cfg: PipelineConfig) -> dict[str, object]:
             twohop = pd.DataFrame()
 
         stats = _summary_stats_source_target(cfg, source_target_table, intermediates)
+        if deg_info:
+            stats.update(deg_info)
         stats["graph_load_seconds"] = round(load_seconds, 3)
         summary = build_summary(cfg, stats, onehop, twohop)
         paths = write_outputs(cfg, onehop, twohop, summary)
@@ -228,6 +302,8 @@ def run_pipeline(cfg: PipelineConfig) -> dict[str, object]:
         twohop = pd.DataFrame()
 
     stats = _summary_stats(cfg, graph, sources, targets_by_source, intermediates)
+    if deg_info:
+        stats.update(deg_info)
     stats["graph_load_seconds"] = round(load_seconds, 3)
     summary = build_summary(cfg, stats, onehop, twohop)
     paths = write_outputs(cfg, onehop, twohop, summary)

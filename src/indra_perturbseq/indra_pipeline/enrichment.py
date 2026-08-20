@@ -28,6 +28,7 @@ def enrich_1hop(df: pd.DataFrame, cfg: PipelineConfig) -> pd.DataFrame:
             out,
             hop_hash_columns={1: "stmt_hash"},
             neo4j_batch_size=cfg.evidence.neo4j_batch_size,
+            max_texts_per_statement=cfg.evidence.max_evidence_texts_per_statement,
         )
         out = _rename_existing(out, {
             "evidence_text_hop1": "evidence_text",
@@ -70,6 +71,7 @@ def enrich_2hop(df: pd.DataFrame, cfg: PipelineConfig) -> pd.DataFrame:
             out,
             hop_hash_columns={1: "stmt_hash_1", 2: "stmt_hash_2"},
             neo4j_batch_size=cfg.evidence.neo4j_batch_size,
+            max_texts_per_statement=cfg.evidence.max_evidence_texts_per_statement,
         )
         out = _rename_existing(out, {
             "evidence_text_hop1": "evidence_text_1",
