@@ -1,0 +1,29 @@
+run:
+  name: precomputed_deg_dir
+  output_dir: outputs/indra_pipeline/precomputed_deg_dir
+
+graph:
+  pkl_path: data/indranet_dir_graph.pkl
+
+sources:
+  values: [FSH]
+
+targets:
+  mode: deg_dir
+  deg_dir: outputs/deg/precomputed
+  gene_column: names
+  p_threshold: 0.05
+  prefer_fdr: true
+
+hops:
+  include: [1, 2]
+  stmt_types: [IncreaseAmount, DecreaseAmount, Activation, Inhibition]
+
+intermediates:
+  mode: present_genes
+
+evidence:
+  enabled: true
+
+plots:
+  enabled: true

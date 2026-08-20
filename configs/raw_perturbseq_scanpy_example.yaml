@@ -1,0 +1,36 @@
+run:
+  name: raw_perturbseq_scanpy
+  output_dir: outputs/indra_pipeline/raw_perturbseq_scanpy
+
+graph:
+  pkl_path: data/indranet_dir_graph.pkl
+
+input:
+  kind: raw_perturbseq
+  adata_path: data/matrix.h5ad
+  perturbation_column: Gene
+  control_labels: [negative-control, safe-targeting]
+  tss_suffix: -TSS2
+  deg_method: wilcoxon
+  min_cells: 1
+  normalize_log1p: false
+  symbol_column: null
+  deg_output_dir: outputs/deg/raw_perturbseq_scanpy
+
+targets:
+  mode: deg_dir
+  p_threshold: 0.05
+  prefer_fdr: true
+
+hops:
+  include: [1, 2]
+  stmt_types: [IncreaseAmount, DecreaseAmount, Activation, Inhibition]
+
+intermediates:
+  mode: present_genes
+
+evidence:
+  enabled: true
+
+plots:
+  enabled: true
