@@ -1,5 +1,4 @@
-"""Load pickled INDRA graphs with compatibility shims.
-Provides helpers for HGNC node checks and graph metadata logging."""
+"""INDRA graph loading and node checks."""
 
 import logging
 import pickle
@@ -27,18 +26,7 @@ def _install_numpy_dtype_shims() -> None:
 
 
 def load_graph(pkl_path: str) -> tuple[nx.DiGraph, float]:
-    """Load a pickled INDRA directed graph.
-
-    Parameters
-    ----------
-    pkl_path :
-        Path to the ``.pkl`` file produced by the INDRA network export.
-
-    Returns
-    -------
-    :
-        A ``(graph, elapsed_seconds)`` tuple.
-    """
+    """Load a pickled INDRA directed graph."""
     _install_numpy_dtype_shims()
     t0 = time.time()
     with open(pkl_path, "rb") as fh:

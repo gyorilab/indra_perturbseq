@@ -1,5 +1,4 @@
-"""Normalize gene symbols to current HGNC-approved names.
-Handles missing values and deterministic resolution of ambiguous IDs."""
+"""HGNC gene symbol normalization."""
 
 from __future__ import annotations
 
@@ -29,22 +28,7 @@ def _canonicalize_symbol_text(symbol: str) -> str:
 
 
 def normalize_hgnc_symbol(symbol: str | float | None) -> str | None:
-    """Return the current HGNC symbol for *symbol*, or ``None``.
-
-    If HGNC returns multiple IDs the lexicographically first is chosen
-    so that results are deterministic.
-
-    Parameters
-    ----------
-    symbol :
-        Raw gene symbol (or ``None`` / ``NaN``).
-
-    Returns
-    -------
-    :
-        Current HGNC symbol, uppercased original if lookup fails,
-        or ``None`` for missing / empty input.
-    """
+    """Return the current HGNC symbol, or ``None`` for missing values."""
     if symbol is None or (isinstance(symbol, float) and pd.isna(symbol)):
         return None
     s = str(symbol).strip()

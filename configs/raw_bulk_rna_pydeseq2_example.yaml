@@ -1,0 +1,37 @@
+run:
+  name: raw_bulk_rna_pydeseq2
+  output_dir: outputs/indra_pipeline/raw_bulk_rna_pydeseq2
+
+graph:
+  pkl_path: data/indranet_dir_graph.pkl
+
+input:
+  kind: raw_bulk_rna
+  counts_path: data/counts.csv
+  metadata_path: data/metadata.csv
+  sample_column: sample_id
+  source_column: perturbation_gene
+  condition_column: condition
+  control_label: control
+  counts_orientation: genes_by_samples
+  count_gene_column: gene
+  deg_backend: pydeseq2
+  deg_output_dir: outputs/deg/raw_bulk_rna_pydeseq2
+
+targets:
+  mode: deg_dir
+  p_threshold: 0.05
+  prefer_fdr: true
+
+hops:
+  include: [1, 2]
+  stmt_types: [IncreaseAmount, DecreaseAmount, Activation, Inhibition]
+
+intermediates:
+  mode: present_genes
+
+evidence:
+  enabled: true
+
+plots:
+  enabled: true
