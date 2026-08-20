@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the flexible INDRA pipeline from a YAML or JSON config."""
+"""Run the INDRA pipeline from a YAML or JSON config."""
 
 from __future__ import annotations
 

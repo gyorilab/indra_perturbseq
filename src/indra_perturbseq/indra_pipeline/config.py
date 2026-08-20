@@ -1,4 +1,4 @@
-"""Configuration models and loading for the flexible INDRA pipeline."""
+"""Configuration models for pipeline runs."""
 
 from __future__ import annotations
 
@@ -221,7 +221,7 @@ def load_config(
 
 
 def validate_config(cfg: PipelineConfig, *, require_graph: bool = True) -> None:
-    """Validate required fields and supported V1 options."""
+    """Validate required fields and supported options."""
     if require_graph and not cfg.graph.pkl_path:
         raise ValueError("graph.pkl_path is required.")
 

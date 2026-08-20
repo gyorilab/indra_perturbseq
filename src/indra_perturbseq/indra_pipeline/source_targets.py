@@ -1,4 +1,4 @@
-"""Canonical source-target table construction and graph resolution."""
+"""Source-target table loading and graph resolution."""
 
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ class SourceTargetTable:
 
 
 def build_source_target_table(cfg: PipelineConfig) -> SourceTargetTable:
-    """Build the canonical source-target table from configured input."""
+    """Build the source-target table from configured input."""
     if cfg.input.kind != "paired_table":
         raise ValueError("Canonical input currently supports input.kind='paired_table'.")
 
@@ -77,7 +77,7 @@ def build_source_target_table(cfg: PipelineConfig) -> SourceTargetTable:
 
 
 def resolve_source_target_table(graph, table: SourceTargetTable) -> SourceTargetTable:
-    """Resolve canonical raw source/target values to INDRA graph nodes."""
+    """Resolve raw source and target values to graph nodes."""
     cache: dict[str, object] = {}
 
     def _resolve(raw: object):
@@ -109,7 +109,11 @@ def resolve_source_target_table(graph, table: SourceTargetTable) -> SourceTarget
         & resolved["source_node"].notna()
         & resolved["target_node"].notna()
     ].copy()
-    return SourceTargetTable(usable.reset_index(drop=True), table.input_rows, table.significant_rows)
+    return SourceTargetTable(
+        usable.reset_index(drop=True),
+        table.input_rows,
+        table.significant_rows,
+    )
 
 
 def full_hgnc_nodes(graph) -> set[str]:

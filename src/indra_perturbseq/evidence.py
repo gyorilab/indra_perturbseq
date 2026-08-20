@@ -19,8 +19,6 @@ _hash_cache_lock = Lock()
 _hash_cache: dict[int, dict] = {}
 
 
-# db.indra.bio (REST)
-
 def fetch_from_hash_json(stmt_hash: int) -> dict:
     """Fetch statement JSON from db.indra.bio by *stmt_hash*."""
     return fetch_statement_json(stmt_hash)
@@ -30,10 +28,7 @@ def evidence_from_hash(
     stmt_hash: int,
     max_texts: int = 20,
 ) -> tuple[str, list[str], OrderedDict]:
-    """Fetch evidence text, PMIDs, and source APIs from db.indra.bio.
-
-    Returns ``(evidence_text, pmids, sources_seen)``.
-    """
+    """Fetch evidence text, PMIDs, and source APIs from db.indra.bio."""
     with _hash_cache_lock:
         if stmt_hash in _hash_cache:
             c = _hash_cache[stmt_hash]
@@ -110,10 +105,6 @@ def format_evidence_text(text: str) -> str:
         re.sub(r"^(\d+)\.\s", r"\1) ", p) for p in parts if p
     )
 
-
-# ------------------------------------------------------------------
-# Neo4j Evidence-node enrichment
-# ------------------------------------------------------------------
 
 def _parse_evidence_node(ev_obj) -> tuple[str | None, str | None, str | None]:
     """Extract (text, pmid, source_key) from a Neo4j evidence object."""
@@ -243,11 +234,7 @@ def _coerce_stmt_hash(raw_hash: object) -> int | None:
 
 
 def _normalize_stmt_hash_literal(raw_hash: object) -> str:
-    """Return a CSV-safe stmt_hash literal without scientific notation.
-
-    This preserves exact numeric statement hashes as digit strings and leaves
-    non-numeric graph metadata (for example identifiers.org URLs) untouched.
-    """
+    """Keep statement hashes stable when result tables are written to CSV."""
     if raw_hash is None or pd.isna(raw_hash):
         return ""
     if isinstance(raw_hash, (int, np.integer)):
@@ -274,23 +261,7 @@ def enrich_evidence(
     max_texts_per_statement: int = 20,
     db_indra_fallback: bool = True,
 ) -> pd.DataFrame:
-    """Add evidence text and PMIDs columns from Neo4j Evidence nodes.
-
-    Parameters
-    ----------
-    df :
-        Input dataframe containing statement hash columns.
-    hop_hash_columns :
-        Optional mapping from hop number to hash column name.
-        When omitted, uses ``hopN_hash`` columns discovered on *df*.
-    neo4j_batch_size :
-        Batch size for Neo4j statement-hash queries.
-    max_texts_per_statement :
-        Maximum evidence text snippets to keep for db.indra.bio fallback.
-    db_indra_fallback :
-        If ``True``, fill numeric stmt_hash misses from ``db.indra.bio`` only
-        after Neo4j returns no evidence for them.
-    """
+    """Add evidence text and PMID columns to a result table."""
     df = df.copy()
     if hop_hash_columns is None:
         hop_hash_columns = {}
@@ -301,8 +272,7 @@ def enrich_evidence(
     if not hop_hash_columns:
         return df
 
-    # Preserve stmt_hash literals as strings so future CSV writes don't coerce
-    # large hashes into float/scientific notation.
+    # Keep large hashes out of scientific notation in CSV outputs.
     for hash_col in hop_hash_columns.values():
         if hash_col in df.columns:
             df[hash_col] = df[hash_col].map(_normalize_stmt_hash_literal)

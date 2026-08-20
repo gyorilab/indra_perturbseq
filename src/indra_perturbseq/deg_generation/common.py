@@ -1,4 +1,4 @@
-"""Shared helpers for upstream DEG generation."""
+"""DEG output normalization."""
 
 from __future__ import annotations
 
@@ -24,12 +24,12 @@ def safe_source_name(label: object) -> str:
 
 
 def empty_deg_frame() -> pd.DataFrame:
-    """Return an empty canonical DEG dataframe."""
+    """Return an empty DEG table with pipeline columns."""
     return pd.DataFrame({col: [] for col in CANONICAL_DEG_COLUMNS})
 
 
 def write_deg_csv(df: pd.DataFrame, output_dir: str | Path, source: str) -> Path:
-    """Write one canonical DEG CSV and return its path."""
+    """Write one DEG CSV and return its path."""
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / f"{safe_source_name(source)}_vs_control.csv"
@@ -58,7 +58,7 @@ def standardize_scanpy_deg(
     *,
     source: str | None = None,
 ) -> pd.DataFrame:
-    """Normalize Scanpy ``rank_genes_groups`` output to pipeline DEG columns."""
+    """Map Scanpy result columns to the pipeline DEG schema."""
     out = df.copy()
     rename = {
         "name": "names",
@@ -74,9 +74,15 @@ def standardize_scanpy_deg(
     }
     out = out.rename(columns={k: v for k, v in rename.items() if k in out.columns})
     if "names" not in out.columns:
-        raise ValueError(f"Scanpy DEG output missing gene-name column: {df.columns.tolist()}")
+        raise ValueError(
+            "Scanpy DEG output missing gene-name column: "
+            f"{df.columns.tolist()}"
+        )
     if "pvals" not in out.columns:
-        raise ValueError(f"Scanpy DEG output missing p-value column: {df.columns.tolist()}")
+        raise ValueError(
+            "Scanpy DEG output missing p-value column: "
+            f"{df.columns.tolist()}"
+        )
     if "logfoldchanges" not in out.columns:
         out["logfoldchanges"] = pd.NA
     if "pvals_adj" not in out.columns:
@@ -91,7 +97,7 @@ def standardize_pydeseq2_deg(
     *,
     source: str | None = None,
 ) -> pd.DataFrame:
-    """Normalize PyDESeq2-style output to pipeline DEG columns."""
+    """Map PyDESeq2 result columns to the pipeline DEG schema."""
     out = df.copy()
     if "target" not in out.columns and "names" not in out.columns:
         out = out.reset_index()
@@ -106,9 +112,15 @@ def standardize_pydeseq2_deg(
     }
     out = out.rename(columns={k: v for k, v in rename.items() if k in out.columns})
     if "names" not in out.columns:
-        raise ValueError(f"PyDESeq2 output missing gene-name column: {df.columns.tolist()}")
+        raise ValueError(
+            "PyDESeq2 output missing gene-name column: "
+            f"{df.columns.tolist()}"
+        )
     if "pvals" not in out.columns:
-        raise ValueError(f"PyDESeq2 output missing p-value column: {df.columns.tolist()}")
+        raise ValueError(
+            "PyDESeq2 output missing p-value column: "
+            f"{df.columns.tolist()}"
+        )
     if "logfoldchanges" not in out.columns:
         out["logfoldchanges"] = pd.NA
     if "pvals_adj" not in out.columns:

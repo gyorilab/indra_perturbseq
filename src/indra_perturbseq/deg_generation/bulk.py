@@ -1,4 +1,4 @@
-"""Bulk RNA DEG generation backends for raw YAML pipeline inputs."""
+"""Bulk RNA DEG generation."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 def generate_bulk_degs(cfg: PipelineConfig) -> tuple[Path, list[str]]:
-    """Generate per-source DEG CSVs from a bulk RNA count matrix."""
+    """Generate DEG CSVs from a bulk RNA count matrix."""
     backend = cfg.input.deg_backend.lower()
     if backend == "pydeseq2":
         return generate_pydeseq2_degs(cfg)
@@ -66,8 +66,12 @@ def generate_pydeseq2_degs(cfg: PipelineConfig) -> tuple[Path, list[str]]:
         result = standardize_pydeseq2_deg(stats.results_df, source=source)
         result["condition"] = source
         result["comparison_name"] = f"{source}_vs_control"
-        result["n_perturbed_samples"] = int((sub_meta["_indra_condition"] == source).sum())
-        result["n_control_samples"] = int((sub_meta["_indra_condition"] == "control").sum())
+        result["n_perturbed_samples"] = int(
+            (sub_meta["_indra_condition"] == source).sum()
+        )
+        result["n_control_samples"] = int(
+            (sub_meta["_indra_condition"] == "control").sum()
+        )
         write_deg_csv(result, out_dir, source)
         written.append(safe_source_name(source))
 
@@ -98,7 +102,10 @@ def generate_ttest_degs(cfg: PipelineConfig) -> tuple[Path, list[str]]:
         lfc = perturbed.mean(axis=0) - control.mean(axis=0)
         _stat, pvals = ttest_ind(perturbed, control, axis=0, equal_var=False)
         pvals = np.where(np.isnan(pvals), 1.0, pvals)
-        _reject, padj, _alphac_sidak, _alphac_bonf = multipletests(pvals, method="fdr_bh")
+        _reject, padj, _alphac_sidak, _alphac_bonf = multipletests(
+            pvals,
+            method="fdr_bh",
+        )
         result = standardize_pydeseq2_deg(
             pd.DataFrame({
                 "target": log_counts.columns,
@@ -153,7 +160,10 @@ def _orient_counts(
         return out.loc[[s for s in samples if s in out.index]]
 
     if orientation != "genes_by_samples":
-        raise ValueError("input.counts_orientation must be 'genes_by_samples' or 'samples_by_genes'.")
+        raise ValueError(
+            "input.counts_orientation must be 'genes_by_samples' "
+            "or 'samples_by_genes'."
+        )
 
     gene_col = _gene_column(counts, cfg.input.count_gene_column)
     matrix = counts.set_index(gene_col)
@@ -186,9 +196,14 @@ def _iter_bulk_comparisons(
         if col not in metadata.columns:
             raise ValueError(f"Bulk metadata missing required column '{col}'.")
 
-    controls = metadata[metadata[cond_col].astype(str) == str(cfg.input.control_label)].copy()
+    controls = metadata[
+        metadata[cond_col].astype(str) == str(cfg.input.control_label)
+    ].copy()
     if controls.empty:
-        raise ValueError(f"No bulk control samples found for control_label={cfg.input.control_label!r}.")
+        raise ValueError(
+            "No bulk control samples found for "
+            f"control_label={cfg.input.control_label!r}."
+        )
 
     sources = [
         str(s).strip()
@@ -207,7 +222,11 @@ def _iter_bulk_comparisons(
             & (metadata[cond_col].astype(str) != str(cfg.input.control_label))
         ].copy()
         if len(perturbed) < cfg.input.min_replicates:
-            logger.warning("Skipping %s: only %d perturbed samples.", source, len(perturbed))
+            logger.warning(
+                "Skipping %s: only %d perturbed samples.",
+                source,
+                len(perturbed),
+            )
             continue
         if len(controls) < cfg.input.min_replicates:
             raise ValueError(
@@ -216,7 +235,9 @@ def _iter_bulk_comparisons(
             )
 
         sub_meta = pd.concat([controls, perturbed], axis=0)
-        sub_meta = sub_meta.loc[[idx for idx in sub_meta.index if idx in counts.index]].copy()
+        sub_meta = sub_meta.loc[
+            [idx for idx in sub_meta.index if idx in counts.index]
+        ].copy()
         sub_meta["_indra_condition"] = [
             "control" if str(v) == str(cfg.input.control_label) else source
             for v in sub_meta[cond_col]

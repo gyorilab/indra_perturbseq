@@ -1,4 +1,4 @@
-"""End-to-end orchestration for the flexible INDRA pipeline."""
+"""Pipeline orchestration."""
 
 from __future__ import annotations
 
@@ -180,8 +180,12 @@ def _summary_stats_source_target(
             (rows["source_raw"].nunique() if "source_raw" in rows else 0)
             - (rows["source_node"].nunique() if "source_node" in rows else 0),
         ),
-        "target_unique_significant": rows["target_raw"].nunique() if "target_raw" in rows else 0,
-        "target_graph_matched": rows["target_node"].nunique() if "target_node" in rows else 0,
+        "target_unique_significant": (
+            rows["target_raw"].nunique() if "target_raw" in rows else 0
+        ),
+        "target_graph_matched": (
+            rows["target_node"].nunique() if "target_node" in rows else 0
+        ),
         "present_gene_universe_size": len(table.present_hgnc_genes),
         "intermediate_universe_size": len(intermediates),
     }
@@ -196,7 +200,10 @@ def _intermediates_for_source_target_input(
         return full_hgnc_nodes(graph)
     if cfg.intermediates.file:
         return load_gene_list(cfg.intermediates.file, cfg.intermediates.column)
-    return {g for g in table.present_hgnc_genes if g in graph and is_hgnc_node(graph, g)}
+    return {
+        g for g in table.present_hgnc_genes
+        if g in graph and is_hgnc_node(graph, g)
+    }
 
 
 def run_pipeline(
@@ -205,7 +212,7 @@ def run_pipeline(
     deg_only: bool = False,
     skip_deg: bool = False,
 ) -> dict[str, object]:
-    """Run the configured pipeline and return paths plus dataframes."""
+    """Run the configured pipeline."""
     cfg, deg_info = _prepare_raw_deg_input(cfg, skip_deg=skip_deg)
     if deg_only:
         if deg_info is None:

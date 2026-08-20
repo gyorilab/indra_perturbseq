@@ -1,4 +1,4 @@
-"""Input loading and under-the-hood normalization for the INDRA pipeline."""
+"""Input loading and normalization."""
 
 from __future__ import annotations
 

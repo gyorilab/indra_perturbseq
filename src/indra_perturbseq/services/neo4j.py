@@ -1,6 +1,4 @@
-"""Service adapter for Neo4j access via INDRA CoGEx clients.
-This module provides service adapters for external APIs and data backends.
-"""
+"""Neo4j access through INDRA CoGEx."""
 
 from __future__ import annotations
 

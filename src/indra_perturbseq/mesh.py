@@ -1,6 +1,4 @@
-"""MeSH term annotation via INDRA CoGEx.
-This module provides shared utilities used across the INDRA Perturb-seq codebase.
-"""
+"""MeSH term annotation via INDRA CoGEx."""
 
 from __future__ import annotations
 
@@ -79,20 +77,7 @@ def annotate_mesh(
     pmid_columns: list[str] | None = None,
     mesh_batch_size: int = 200,
 ) -> pd.DataFrame:
-    """Add 'Annotated MeSH terms hopN' columns to *df*.
-
-    Parameters
-    ----------
-    df :
-        DataFrame with ``pmids_hop1``, ``pmids_hop2``, etc. columns.
-    mesh_reference_csv :
-        CSV containing valid MeSH IDs for filtering.
-    pmid_columns :
-        Explicit PMID column names. Defaults to auto-detecting
-        ``pmids_hop{1,2,3}``.
-    mesh_batch_size :
-        Batch size for ``get_mesh_ids_for_pmids`` calls.
-    """
+    """Add MeSH annotation columns for the configured PMID columns."""
     if pmid_columns is None:
         pmid_columns = [c for c in ("pmids_hop1", "pmids_hop2", "pmids_hop3")
                         if c in df.columns]
@@ -100,7 +85,10 @@ def annotate_mesh(
     df = df.copy()
     for pc in pmid_columns:
         hop = re.search(r"hop(\d+)", pc)
-        out_col = f"Annotated MeSH terms hop{hop.group(1)}" if hop else f"Annotated MeSH terms {pc}"
+        if hop:
+            out_col = f"Annotated MeSH terms hop{hop.group(1)}"
+        else:
+            out_col = f"Annotated MeSH terms {pc}"
         if out_col not in df.columns:
             df[out_col] = ""
 
@@ -136,7 +124,10 @@ def annotate_mesh(
 
     for pc in pmid_columns:
         hop = re.search(r"hop(\d+)", pc)
-        out_col = f"Annotated MeSH terms hop{hop.group(1)}" if hop else f"Annotated MeSH terms {pc}"
+        if hop:
+            out_col = f"Annotated MeSH terms hop{hop.group(1)}"
+        else:
+            out_col = f"Annotated MeSH terms {pc}"
         df[out_col] = df[pc].apply(_mesh_for_cell)
 
     return df

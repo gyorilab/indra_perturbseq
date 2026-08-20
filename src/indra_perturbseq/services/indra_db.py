@@ -1,6 +1,4 @@
-"""Service adapter for db.indra.bio and INDRA REST calls.
-This module provides service adapters for external APIs and data backends.
-"""
+"""db.indra.bio and INDRA REST access."""
 
 from __future__ import annotations
 

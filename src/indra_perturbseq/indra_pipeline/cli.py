@@ -12,7 +12,7 @@ from indra_perturbseq.runtime import add_log_level_arg, configure_logging
 
 def build_parser() -> argparse.ArgumentParser:
     """Build the command-line parser."""
-    parser = argparse.ArgumentParser(description="Run the flexible INDRA pipeline.")
+    parser = argparse.ArgumentParser(description="Run the INDRA pipeline.")
     parser.add_argument("--config", required=True, help="YAML or JSON pipeline config.")
     parser.add_argument("--output-dir", default=None, help="Override run.output_dir.")
     parser.add_argument(

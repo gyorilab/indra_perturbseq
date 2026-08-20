@@ -199,7 +199,7 @@ def run_1hop_source_target_table(
     stmt_types: list[str],
     representative_only: bool = False,
 ) -> pd.DataFrame:
-    """Find source -> target paths for canonical source-target rows."""
+    """Find source -> target paths for paired input rows."""
     rows: list[dict] = []
     if source_targets.empty:
         return pd.DataFrame()
@@ -241,7 +241,7 @@ def run_2hop_source_target_table(
     stmt_types: list[str],
     representative_only: bool = False,
 ) -> pd.DataFrame:
-    """Find source -> intermediate -> target paths for canonical rows."""
+    """Find source -> intermediate -> target paths for paired input rows."""
     rows: list[dict] = []
     if source_targets.empty:
         return pd.DataFrame()

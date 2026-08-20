@@ -3,26 +3,9 @@
 Config-driven INDRA pipeline for explaining Perturb-seq source-target effects through
 1-hop and 2-hop INDRA graph paths.
 
-## What Is Retained
-
-This branch is intentionally focused on the current INDRA pipeline:
-
-```text
-src/indra_perturbseq/
-  deg_generation/      # optional raw single-cell and bulk RNA DEG generation
-  indra_pipeline/      # config, input loading, path search, enrichment, outputs
-  services/            # db.indra.bio and Neo4j adapters used by enrichment
-  deg.py               # DEG column/path helpers for pipeline inputs
-  evidence.py          # optional statement evidence enrichment
-  graph.py             # INDRA graph loading and node helpers
-  hgnc.py              # source/target gene normalization
-  mesh.py              # optional MeSH enrichment
-  runtime.py           # CLI logging helpers
-  statements.py        # INDRA statement URL formatting
-```
-
-Legacy preprocessing, evaluation, postprocessing, standalone plotting, permutation,
-and older hop-specific CLIs have been removed from this branch.
+The package contains the reusable YAML pipeline, raw DEG generation, INDRA graph
+path search, enrichment, outputs, and visualizations. Legacy preprocessing,
+evaluation, postprocessing, permutation, and older one-off CLIs are out of scope.
 
 ## Installation
 
@@ -33,9 +16,9 @@ pip install -e .
 Raw input backends are optional:
 
 ```bash
-pip install -e ".[single-cell]"  # Scanpy / AnnData
-pip install -e ".[bulk]"         # PyDESeq2
-pip install -e ".[all]"          # all optional DEG backends
+pip install -e ".[single-cell]"
+pip install -e ".[bulk]"
+pip install -e ".[all]"
 ```
 
 ## Run

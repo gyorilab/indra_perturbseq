@@ -1,4 +1,4 @@
-"""Small statement-formatting helpers used by the INDRA pipeline."""
+"""Statement formatting."""
 
 from __future__ import annotations
 

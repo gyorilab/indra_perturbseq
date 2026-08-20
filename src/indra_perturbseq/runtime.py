@@ -1,6 +1,4 @@
-"""Shared runtime helpers for CLI modules.
-This module provides shared utilities used across the INDRA Perturb-seq codebase.
-"""
+"""Runtime helpers for command-line entry points."""
 
 from __future__ import annotations
 

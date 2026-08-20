@@ -1,4 +1,4 @@
-"""Scanpy-based DEG generation for raw Perturb-seq/single-cell inputs."""
+"""Scanpy DEG generation for raw single-cell inputs."""
 
 from __future__ import annotations
 
@@ -43,7 +43,12 @@ def generate_single_cell_degs(cfg: PipelineConfig) -> tuple[Path, list[str]]:
                 f"adata.var missing symbol_column '{input_cfg.symbol_column}'. "
                 f"Available: {adata.var.columns.tolist()}"
             )
-        adata.var_names = adata.var[input_cfg.symbol_column].astype(str).str.strip().values
+        adata.var_names = (
+            adata.var[input_cfg.symbol_column]
+            .astype(str)
+            .str.strip()
+            .values
+        )
 
     perturb_col = input_cfg.perturbation_column
     if perturb_col not in adata.obs.columns:
@@ -87,7 +92,10 @@ def generate_single_cell_degs(cfg: PipelineConfig) -> tuple[Path, list[str]]:
         if label != "control"
     )
     counts = adata.obs["_indra_perturbation"].value_counts().to_dict()
-    runnable = [source for source in sources if counts.get(source, 0) >= input_cfg.min_cells]
+    runnable = [
+        source for source in sources
+        if counts.get(source, 0) >= input_cfg.min_cells
+    ]
 
     if not runnable:
         for source in sources:

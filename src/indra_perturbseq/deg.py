@@ -1,4 +1,4 @@
-"""Small DEG table helpers used by the config-driven pipeline."""
+"""DEG table helpers used by the pipeline."""
 
 from __future__ import annotations
 
@@ -14,20 +14,7 @@ _P_CANDIDATES = ("pvals", "pval", "p_value", "p_val")
 
 
 def pick_sig_column(df: pd.DataFrame, prefer_fdr: bool = False) -> str:
-    """Return the name of the best p-value / FDR column in *df*.
-
-    Parameters
-    ----------
-    df :
-        DEG DataFrame.
-    prefer_fdr :
-        If ``True`` and an FDR column exists, prefer it over raw p-values.
-
-    Raises
-    ------
-    ValueError
-        If no suitable column is found.
-    """
+    """Choose the p-value or FDR column to use for significance."""
     fdr_col = next((c for c in _FDR_CANDIDATES if c in df.columns), None)
     p_col = next((c for c in _P_CANDIDATES if c in df.columns), None)
     if prefer_fdr and fdr_col:
